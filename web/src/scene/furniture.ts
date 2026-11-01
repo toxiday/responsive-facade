@@ -4,11 +4,24 @@
 // right hand of someone facing front); the group is placed at the bbox centre and turned to
 // the item's facing angle. Shape parameters (sofa chaise, island overhang, sink cutout) come
 // from the bake; room-frame rects in them are mapped into the local frame with `localRect`.
+// Casework carries its door and drawer fronts from the survey; their division lines are drawn
+// on the cabinet face.
 
-import { BoxGeometry, CylinderGeometry, Group, type Material, Mesh, PlaneGeometry } from 'three';
+import {
+  BoxGeometry,
+  BufferGeometry,
+  CylinderGeometry,
+  Float32BufferAttribute,
+  Group,
+  LineBasicMaterial,
+  LineSegments,
+  type Material,
+  Mesh,
+  PlaneGeometry,
+} from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { FurnitureItem } from '../data/manifest';
-import { floorLoop } from './edges';
+import { LINE_COLOR, floorLoop } from './edges';
 import { facingToRotY, roomToThree } from './frame';
 import { PALETTE, solid } from './materials';
 
@@ -93,7 +106,15 @@ function slab(g: Group, mat: Material, r: Rect, hole: Rect | null, y0: number, y
   add(hx0, hz1, hx1, z1);
 }
 
-type Params = Record<string, number | string | number[]>;
+type Params = Record<string, unknown>;
+
+/** Door and drawer fronts on a cabinet face (bake/room.py `_fronts`). */
+interface Fronts {
+  axis: 'x' | 'y';
+  plane: number;
+  out: number;
+  cells: [number, number, number, number][];
+}
 
 interface Ctx {
   dx: number;
@@ -113,8 +134,30 @@ const num = (p: Params, key: string, fallback: number): number => {
 
 const rect = (p: Params, key: string): number[] | null => {
   const v = p[key];
-  return Array.isArray(v) && v.length === 4 ? v : null;
+  return Array.isArray(v) && v.length === 4 ? (v as number[]) : null;
 };
+
+/**
+ * Division lines between a cabinet's fronts: each front's outline on the face, a few mm proud
+ * of it. Neighbouring fronts share edges, so each division is one line. Points are room-frame;
+ * `toLocal` maps them into the item's group.
+ */
+function frontLines(
+  f: Fronts,
+  toLocal: (x: number, y: number, z: number) => [number, number, number],
+): LineSegments {
+  const c = f.plane + f.out * 0.003;
+  const pt = (a: number, z: number) => (f.axis === 'y' ? toLocal(a, c, z) : toLocal(c, a, z));
+  const pos: number[] = [];
+  for (const [a0, a1, z0, z1] of f.cells) {
+    const corners = [pt(a0, z0), pt(a1, z0), pt(a1, z1), pt(a0, z1)];
+    for (let i = 0; i < 4; i++) pos.push(...corners[i]!, ...corners[(i + 1) % 4]!);
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  // A material per piece: wall-hung cabinets are hidden with their wall by material.
+  return new LineSegments(geo, new LineBasicMaterial({ color: LINE_COLOR }));
+}
 
 const BUILDERS: Record<string, Builder> = {
   sectional(g, { dx, dz, h, p }) {
@@ -291,6 +334,14 @@ export function buildItem(item: FurnitureItem): Group {
   g.userData.item = item;
   const build = BUILDERS[item.type] ?? BUILDERS.cabinet!;
   build(g, { dx, dz, h: item.z1 - item.z0, p: item.params ?? {}, localRect });
+  const fronts = item.params?.fronts as Fronts | null | undefined;
+  if (fronts?.cells?.length)
+    g.add(
+      frontLines(fronts, (x, y, z) => {
+        const [lx, lz] = local(x, y);
+        return [lx, z - item.z0, lz];
+      }),
+    );
   // Wall-hung pieces are hidden with their wall, so they need materials of their own.
   if (item.wall)
     g.traverse((o) => {

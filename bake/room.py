@@ -239,6 +239,53 @@ def _sink_basin(sink):
     return [round(v, 4) for v in (x0 + r, y0 + f, x1 - r, y1 - r)]
 
 
+FRONT_T = 0.04      # cabinet fronts are the casework pieces thinner than this
+PLINTH_H = 0.10     # base cabinets stand on a recessed plinth (survey: plinth tops at 0.1)
+
+
+def _fronts(es, bbox, z_range, floor):
+    """Cabinet fronts on a casework piece, for the division lines between doors and drawers.
+
+    The survey gives each front's footprint and top but not its bottom, so a front starts
+    where the one below it in its column ends, and the lowest at `floor` (the plinth top, or
+    the cabinet's bottom). Columns meet at the middle of the gap between them. Returned on the
+    piece's drawn face: {"axis": the room axis the face is normal to, "plane": its coordinate,
+    "out": +1/-1 the outward direction, "cells": [[a0, a1, z0, z1], ...]} with `a` along the
+    face (x for an axis-y face, y for an axis-x face) and z in room metres."""
+    x0, y0, x1, y1 = bbox
+    near = [e for e in es if e["name"] == "casework"
+            and min(e["umax"] - e["umin"], e["vmax"] - e["vmin"]) < FRONT_T
+            and e["umin"] > x0 - 0.03 and e["umax"] < x1 + 0.03
+            and e["vmin"] > y0 - 0.03 and e["vmax"] < y1 + 0.03
+            and z_range[0] < e["ztop"] <= z_range[1] + 1e-3]
+    if not near:
+        return None
+    thin_y = near[0]["vmax"] - near[0]["vmin"] < FRONT_T
+    if thin_y:
+        lo, hi, centre, a_key = y0, y1, (y0 + y1) / 2, ("umin", "umax")
+        side = (near[0]["vmin"] + near[0]["vmax"]) / 2
+    else:
+        lo, hi, centre, a_key = x0, x1, (x0 + x1) / 2, ("vmin", "vmax")
+        side = (near[0]["umin"] + near[0]["umax"]) / 2
+    out = 1 if side > centre else -1
+    columns: dict = {}
+    for e in near:
+        columns.setdefault((round(e[a_key[0]], 3), round(e[a_key[1]], 3)), []).append(e["ztop"])
+    spans = sorted(columns)
+    cells = []
+    for i, (a0, a1) in enumerate(spans):
+        if i > 0 and a0 - spans[i - 1][1] < 0.01:
+            a0 = (a0 + spans[i - 1][1]) / 2
+        if i + 1 < len(spans) and spans[i + 1][0] - a1 < 0.01:
+            a1 = (a1 + spans[i + 1][0]) / 2
+        bottom = floor
+        for top in sorted(columns[spans[i]]):
+            cells.append([round(a0, 4), round(a1, 4), round(bottom, 4), round(top, 4)])
+            bottom = top
+    return {"axis": "y" if thin_y else "x", "plane": round(hi if out > 0 else lo, 4),
+            "out": out, "cells": cells}
+
+
 def _seat_at(b, facing, activity):
     c = _centre(b)
     return _seat(c[0], c[1], facing, activity)
@@ -265,8 +312,9 @@ def furniture() -> list[Item]:
 
     console = _group(es, lambda e: e["umin"] > 4.7 and e["vmin"] >= 1.9 and e["vmax"] <= 4.5,
                      "media console")
-    out.append(Item("media_console", "console", "Media console", _union(console), 0,
-                    max(e["ztop"] for e in console), 180.0, "tv"))
+    cz = max(e["ztop"] for e in console)
+    out.append(Item("media_console", "console", "Media console", _union(console), 0, cz, 180.0,
+                    "tv", params={"fronts": _fronts(es, _union(console), (0, cz), 0.0)}))
     tv = _one(es, "TV 77in LG C9")
     out.append(Item("tv", "tv", "TV", _bbox(tv), max(e["ztop"] for e in console), tv["ztop"],
                     180.0, "tv"))
@@ -302,10 +350,12 @@ def furniture() -> list[Item]:
     overhang = min(e["vmin"] for e in island if e is not top) - top["vmin"]
     sink = _one(es, "Kitchen Sink Norrsjon + Faucet")
     basin = _sink_basin(sink)
-    out.append(Item("island", "island", "Kitchen island", _union(island), 0, top["ztop"],
+    ib = _union(island)
+    out.append(Item("island", "island", "Kitchen island", ib, 0, top["ztop"],
                     270.0, "cooking_range",
                     params={"overhang": round(overhang, 3), "cutout": basin,
-                            "cutout_depth": SINK_BASIN["depth"]}))
+                            "cutout_depth": SINK_BASIN["depth"],
+                            "fronts": _fronts(es, ib, (0, top["ztop"]), PLINTH_H)}))
     out.append(Item("sink", "sink", "Sink", _bbox(sink), 0, sink["ztop"], 270.0, "cooking_range",
                     params={"basin": basin, "depth": SINK_BASIN["depth"],
                             "counter": top["ztop"]}))
@@ -328,7 +378,8 @@ def furniture() -> list[Item]:
     for i, b in enumerate(sorted(bases, key=lambda e: e["umin"])):
         x = (b["umin"] + b["umax"]) / 2
         out.append(Item(f"counter_{i}", "counter", "Counter", _bbox(b), 0, b["ztop"], 270.0,
-                        kitchen[i], seats=[_seat(x, aisle_y, 90.0, kitchen[i])]))
+                        kitchen[i], seats=[_seat(x, aisle_y, 90.0, kitchen[i])],
+                        params={"fronts": _fronts(es, _bbox(b), (0, b["ztop"]), PLINTH_H)}))
     x = (rng["umin"] + rng["umax"]) / 2
     out.append(Item("range", "range", "Range", _bbox(rng), 0, rng["ztop"], 270.0,
                     "cooking_range", seats=[_seat(x, aisle_y, 90.0, "cooking_range")]))
@@ -338,13 +389,17 @@ def furniture() -> list[Item]:
     tall = _group(es, lambda e: e["umin"] > 3.4 and e["vmin"] >= 9.8 and e["vmax"] > 10.3
                   and e["ztop"] >= 2.99, "fridge cabinet")
     out.append(Item("fridge_cabinet", "cabinet", "Cabinet", _union(tall), fridge["ztop"], 3.0,
-                    270.0, wall="N"))
+                    270.0, wall="N",
+                    params={"fronts": _fronts(es, _union(tall), (fridge["ztop"], 3.0),
+                                              fridge["ztop"])}))
     uppers = _group(es, lambda e: e["umax"] < 3.42 and e["vmin"] >= 10.07 and e["vmax"] > 10.4
                     and e["ztop"] >= 2.99, "wall cabinets")
     hood = _group(es, lambda e: e["vmin"] >= 10.07 and e["vmax"] > 10.4
                   and 1.6 < e["ztop"] < 1.8, "hood")
-    out.append(Item("wall_cabinets", "cabinet", "Wall cabinets", _union(uppers),
-                    max(e["ztop"] for e in hood), 3.0, 270.0, wall="N"))
+    up_z0 = max(e["ztop"] for e in hood)
+    out.append(Item("wall_cabinets", "cabinet", "Wall cabinets", _union(uppers), up_z0, 3.0,
+                    270.0, wall="N",
+                    params={"fronts": _fronts(es, _union(uppers), (up_z0, 3.0), up_z0)}))
 
     # Added for the demo: 501.6 has no desk (docs/decisions.md). Its chair is a dining chair,
     # tucked under the desk like the dining chairs.

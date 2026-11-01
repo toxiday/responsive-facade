@@ -50,7 +50,7 @@ export interface FurnitureItem {
   click: string | null;
   added: boolean;
   /** Shape parameters for the builder (bake/room.py), e.g. the sofa's chaise. */
-  params: Record<string, number | string | number[]> | null;
+  params: Record<string, unknown> | null;
   /** Where people use it (the sofa has two: main seat and chaise). */
   seats: Seat[];
   /** The wall it hangs on; the cutaway hides it with that wall. */
