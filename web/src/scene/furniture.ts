@@ -2,18 +2,13 @@
 // surveyed bounding box and height, nothing from the Dimensions.com models ships.
 // Builders work in a local frame with the front facing +x, up +y, width along z (+z is the
 // right hand of someone facing front); the group is placed at the bbox centre and turned to
-// the item's facing angle. Shape parameters (sofa chaise, island overhang) come from the bake.
+// the item's facing angle. Shape parameters (sofa chaise, island overhang, sink cutout) come
+// from the bake; room-frame rects in them are mapped into the local frame with `localRect`.
 
-import {
-  BoxGeometry,
-  CylinderGeometry,
-  Group,
-  type Material,
-  Mesh,
-  type MeshStandardMaterial,
-  PlaneGeometry,
-} from 'three';
+import { BoxGeometry, CylinderGeometry, Group, type Material, Mesh, PlaneGeometry } from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { FurnitureItem } from '../data/manifest';
+import { floorLoop } from './edges';
 import { facingToRotY, roomToThree } from './frame';
 import { PALETTE, solid } from './materials';
 
@@ -26,6 +21,14 @@ const MAT = {
   added: solid(PALETTE.added),
 };
 
+function place(g: Group, m: Mesh, x: number, y: number, z: number): Mesh {
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  g.add(m);
+  return m;
+}
+
 function box(
   g: Group,
   mat: Material,
@@ -36,24 +39,28 @@ function box(
   y = dy / 2,
   z = 0,
 ): Mesh {
-  const m = new Mesh(
-    new BoxGeometry(Math.max(dx, 0.005), Math.max(dy, 0.005), Math.max(dz, 0.005)),
-    mat,
-  );
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  g.add(m);
-  return m;
+  const geo = new BoxGeometry(Math.max(dx, 0.005), Math.max(dy, 0.005), Math.max(dz, 0.005));
+  return place(g, new Mesh(geo, mat), x, y, z);
+}
+
+/** Upholstery: a box with rounded edges and corners. */
+function soft(
+  g: Group,
+  mat: Material,
+  dx: number,
+  dy: number,
+  dz: number,
+  x = 0,
+  y = dy / 2,
+  z = 0,
+  r = 0.06,
+): Mesh {
+  const rr = Math.max(0.002, Math.min(r, dx / 2, dy / 2, dz / 2) - 0.002);
+  return place(g, new Mesh(new RoundedBoxGeometry(dx, dy, dz, 3, rr), mat), x, y, z);
 }
 
 function cyl(g: Group, mat: Material, r: number, h: number, x = 0, y = h / 2, z = 0): Mesh {
-  const m = new Mesh(new CylinderGeometry(r, r, Math.max(h, 0.005), 24), mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  g.add(m);
-  return m;
+  return place(g, new Mesh(new CylinderGeometry(r, r, Math.max(h, 0.005), 24), mat), x, y, z);
 }
 
 function legs(g: Group, mat: Material, dx: number, dz: number, h: number, inset = 0.05) {
@@ -63,23 +70,52 @@ function legs(g: Group, mat: Material, dx: number, dz: number, h: number, inset 
       box(g, mat, t, h, t, sx * (dx / 2 - inset), h / 2, sz * (dz / 2 - inset));
 }
 
-type Params = Record<string, number | string>;
-type Builder = (
-  g: Group,
-  dx: number,
-  dz: number,
-  h: number,
-  mat: MeshStandardMaterial,
-  p: Params,
-) => void;
+/** Local rect: x0, z0, x1, z1. */
+type Rect = [number, number, number, number];
+
+/** Boxes covering a local rect minus an optional hole, from height y0 to y1. */
+function slab(g: Group, mat: Material, r: Rect, hole: Rect | null, y0: number, y1: number) {
+  const [x0, z0, x1, z1] = r;
+  const add = (a0: number, b0: number, a1: number, b1: number) => {
+    if (a1 - a0 > 1e-4 && b1 - b0 > 1e-4)
+      box(g, mat, a1 - a0, y1 - y0, b1 - b0, (a0 + a1) / 2, (y0 + y1) / 2, (b0 + b1) / 2);
+  };
+  const hx0 = hole ? Math.max(x0, hole[0]) : 0;
+  const hz0 = hole ? Math.max(z0, hole[1]) : 0;
+  const hx1 = hole ? Math.min(x1, hole[2]) : 0;
+  const hz1 = hole ? Math.min(z1, hole[3]) : 0;
+  if (!hole || hx1 <= hx0 || hz1 <= hz0) return add(x0, z0, x1, z1);
+  add(x0, z0, hx0, z1);
+  add(hx1, z0, x1, z1);
+  add(hx0, z0, hx1, hz0);
+  add(hx0, hz1, hx1, z1);
+}
+
+type Params = Record<string, number | string | number[]>;
+
+interface Ctx {
+  dx: number;
+  dz: number;
+  h: number;
+  p: Params;
+  /** A room-frame rect [x0, y0, x1, y1] in this item's local frame. */
+  localRect(r: number[]): Rect;
+}
+
+type Builder = (g: Group, c: Ctx) => void;
 
 const num = (p: Params, key: string, fallback: number): number => {
   const v = p[key];
   return typeof v === 'number' ? v : fallback;
 };
 
+const rect = (p: Params, key: string): number[] | null => {
+  const v = p[key];
+  return Array.isArray(v) && v.length === 4 ? v : null;
+};
+
 const BUILDERS: Record<string, Builder> = {
-  sectional(g, dx, dz, h, _mat, p) {
+  sectional(g, { dx, dz, h, p }) {
     // A sofa of standard depth along the back; an optional chaise runs forward at one end.
     const seat = 0.42;
     const depth = num(p, 'depth', dx);
@@ -87,40 +123,33 @@ const BUILDERS: Record<string, Builder> = {
     const arm = num(p, 'arm', 0.2);
     const side = p.chaise === 'right' ? 1 : p.chaise === 'left' ? -1 : 0;
     const x0 = -dx / 2;
-    box(g, MAT.fabric, depth, seat, dz, x0 + depth / 2);
-    box(g, MAT.fabric, back, h, dz, x0 + back / 2);
+    soft(g, MAT.fabric, depth, seat, dz, x0 + depth / 2);
+    soft(g, MAT.fabric, back, h, dz, x0 + back / 2, h / 2, 0, 0.09);
     if (side) {
       const cw = num(p, 'chaise_width', 0.8);
-      const len = dx - depth;
+      const len = dx - depth + 0.06; // overlaps the seat so the rounding leaves no gap
       const z = side * (dz / 2 - cw / 2);
-      box(g, MAT.fabric, len, seat - 0.03, cw, x0 + depth + len / 2, (seat - 0.03) / 2, z);
+      soft(g, MAT.fabric, len, seat - 0.03, cw, dx / 2 - len / 2, (seat - 0.03) / 2, z);
       // Arms: full length on the chaise's outer side, sofa depth at the other end.
-      box(g, MAT.fabric, dx, 0.6, arm, 0, 0.3, side * (dz / 2 - arm / 2));
-      box(g, MAT.fabric, depth, 0.6, arm, x0 + depth / 2, 0.3, -side * (dz / 2 - arm / 2));
+      soft(g, MAT.fabric, dx, 0.6, arm, 0, 0.3, side * (dz / 2 - arm / 2), 0.08);
+      soft(g, MAT.fabric, depth, 0.6, arm, x0 + depth / 2, 0.3, -side * (dz / 2 - arm / 2), 0.08);
     } else {
       for (const s of [-1, 1])
-        box(g, MAT.fabric, depth, 0.6, arm, x0 + depth / 2, 0.3, s * (dz / 2 - arm / 2));
+        soft(g, MAT.fabric, depth, 0.6, arm, x0 + depth / 2, 0.3, s * (dz / 2 - arm / 2), 0.08);
     }
   },
-  armchair(g, dx, dz, h) {
-    box(g, MAT.fabric, dx, 0.42, dz);
-    box(g, MAT.fabric, 0.2, h, dz, -dx / 2 + 0.1);
-    for (const s of [-1, 1]) box(g, MAT.fabric, dx, 0.6, 0.14, 0, 0.3, s * (dz / 2 - 0.07));
+  armchair(g, { dx, dz, h }) {
+    soft(g, MAT.fabric, dx, 0.42, dz);
+    soft(g, MAT.fabric, 0.2, h, dz, -dx / 2 + 0.1, h / 2, 0, 0.08);
+    for (const s of [-1, 1]) soft(g, MAT.fabric, dx, 0.6, 0.14, 0, 0.3, s * (dz / 2 - 0.07));
   },
-  chair(g, dx, dz, h) {
+  chair(g, { dx, dz, h }) {
     const s = Math.min(dx, dz) * 0.85;
     box(g, MAT.base, s, 0.04, s, 0, 0.45);
     box(g, MAT.base, 0.04, h - 0.45, s, -s / 2 + 0.02, 0.45 + (h - 0.45) / 2);
     legs(g, MAT.steel, s, s, 0.43, 0.03);
   },
-  task_chair(g, dx, dz, h) {
-    const s = Math.min(dx, dz) * 0.8;
-    box(g, MAT.added, s, 0.08, s, 0, 0.47);
-    box(g, MAT.added, 0.06, h - 0.5, s * 0.9, -s / 2 + 0.03, 0.5 + (h - 0.5) / 2);
-    cyl(g, MAT.steel, 0.03, 0.43, 0, 0.215);
-    cyl(g, MAT.steel, s * 0.45, 0.03, 0, 0.015);
-  },
-  stool(g, dx, dz, h) {
+  stool(g, { dx, dz, h }) {
     // Counter stool: seat at counter-stool height with a low back up to the surveyed top.
     const r = (Math.min(dx, dz) / 2) * 0.85;
     const seatH = h > 0.75 ? 0.65 : h;
@@ -131,67 +160,104 @@ const BUILDERS: Record<string, Builder> = {
       box(g, MAT.steel, s - 0.04, 0.02, 0.02, 0, 0.25, side * (s / 2 - 0.02));
     if (h - seatH > 0.08) box(g, MAT.wood, 0.03, h - seatH, r * 1.5, -r + 0.02, (h + seatH) / 2);
   },
-  coffee_table(g, dx, dz, h) {
+  coffee_table(g, { dx, dz, h }) {
     box(g, MAT.wood, dx, h, dz);
   },
-  round_table(g, dx, dz, h) {
+  round_table(g, { dx, dz, h }) {
     const r = Math.min(dx, dz) / 2;
     cyl(g, MAT.wood, r, 0.03, 0, h - 0.015);
     cyl(g, MAT.steel, 0.03, h - 0.03, 0, (h - 0.03) / 2);
     cyl(g, MAT.steel, r * 0.6, 0.02, 0, 0.01);
   },
-  dining_table(g, dx, dz, h) {
+  dining_table(g, { dx, dz, h }) {
     box(g, MAT.wood, dx, 0.04, dz, 0, h - 0.02);
     legs(g, MAT.wood, dx, dz, h - 0.04, 0.08);
   },
-  desk(g, dx, dz, h) {
+  desk(g, { dx, dz, h }) {
     box(g, MAT.added, dx, 0.03, dz, 0, h - 0.015);
     legs(g, MAT.steel, dx, dz, h - 0.03, 0.04);
   },
-  console(g, dx, dz, h) {
+  console(g, { dx, dz, h }) {
     box(g, MAT.base, dx, h, dz);
   },
-  tv(g, _dx, dz, h) {
+  tv(g, { dz, h }) {
     box(g, MAT.dark, 0.04, h, dz, 0, h / 2);
   },
-  island(g, dx, dz, h, _mat, p) {
+  island(g, c) {
     // The top overhangs the base at the front (the stool side) so the stools tuck under it.
+    // The sink basin is cut through the top and the top of the base.
+    const { dx, dz, h, p } = c;
     const over = num(p, 'overhang', 0.04);
-    const base = dx - over - 0.02;
-    box(g, MAT.base, base, h - 0.04, dz - 0.04, -dx / 2 + 0.02 + base / 2);
-    box(g, MAT.steel, dx, 0.04, dz, 0, h - 0.02);
+    const cut = rect(p, 'cutout');
+    const hole = cut ? c.localRect(cut) : null;
+    const t = 0.04;
+    const base: Rect = [-dx / 2 + 0.02, -dz / 2 + 0.02, dx / 2 - over, dz / 2 - 0.02];
+    const yHole = hole ? h - num(p, 'cutout_depth', 0.2) : h - t;
+    slab(g, MAT.base, base, null, 0, yHole);
+    if (hole) slab(g, MAT.base, base, hole, yHole, h - t);
+    slab(g, MAT.steel, [-dx / 2, -dz / 2, dx / 2, dz / 2], hole, h - t, h);
   },
-  counter(g, dx, dz, h) {
+  counter(g, { dx, dz, h }) {
     box(g, MAT.base, dx, h - 0.04, dz);
     box(g, MAT.steel, dx, 0.04, dz, 0, h - 0.02);
   },
-  range(g, dx, dz, h) {
+  range(g, { dx, dz, h }) {
     box(g, MAT.steel, dx, h - 0.03, dz);
     box(g, MAT.dark, dx, 0.03, dz, 0, h - 0.015);
   },
-  fridge(g, dx, dz, h) {
+  fridge(g, { dx, dz, h }) {
     box(g, MAT.steel, dx, h, dz);
   },
-  cabinet(g, dx, dz, h) {
+  cabinet(g, { dx, dz, h }) {
     box(g, MAT.base, dx, h, dz);
   },
-  sink(g, dx, dz, h) {
-    // Basin recessed in the island top; the faucet is the tall part of the survey bbox.
-    box(g, MAT.dark, dx * 0.8, 0.02, dz * 0.8, 0, 0.905);
-    cyl(g, MAT.steel, 0.015, h - 0.9, dx * 0.35, 0.9 + (h - 0.9) / 2);
+  sink(g, c) {
+    // A steel basin lining the island's cutout, a drain, and the faucet on the far side.
+    const { dx, h, p } = c;
+    const b = rect(p, 'basin');
+    if (!b) return;
+    const [x0, z0, x1, z1] = c.localRect(b);
+    const depth = num(p, 'depth', 0.2);
+    const top = num(p, 'counter', 0.9);
+    const yb = top - depth;
+    const t = 0.006;
+    const [w, l, cx, cz] = [x1 - x0, z1 - z0, (x0 + x1) / 2, (z0 + z1) / 2];
+    box(g, MAT.steel, w, 0.01, l, cx, yb + 0.005, cz);
+    box(g, MAT.steel, t, depth, l, x0 + t / 2, yb + depth / 2, cz);
+    box(g, MAT.steel, t, depth, l, x1 - t / 2, yb + depth / 2, cz);
+    box(g, MAT.steel, w, depth, t, cx, yb + depth / 2, z0 + t / 2);
+    box(g, MAT.steel, w, depth, t, cx, yb + depth / 2, z1 - t / 2);
+    cyl(g, MAT.dark, 0.035, 0.004, cx, yb + 0.012, cz);
+    const fx = (x1 + dx / 2) / 2;
+    const fh = h - top;
+    cyl(g, MAT.steel, 0.016, fh, fx, top + fh / 2, cz);
+    box(g, MAT.steel, 0.22, 0.025, 0.025, fx - 0.11, h - 0.0125, cz);
   },
 };
 
-function rug(item: FurnitureItem): Mesh {
+function rug(item: FurnitureItem): Group {
   const [x0, y0, x1, y1] = item.bbox;
+  const g = new Group();
+  g.name = `furniture-${item.id}`;
+  g.userData.item = item;
   const m = new Mesh(new PlaneGeometry(x1 - x0, y1 - y0), solid(PALETTE.rug, 1));
   m.rotation.x = -Math.PI / 2;
   roomToThree((x0 + x1) / 2, (y0 + y1) / 2, 0.004, m.position);
   m.receiveShadow = true;
-  return m;
+  const outline = floorLoop(
+    [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ],
+    0.006,
+  );
+  g.add(m, outline);
+  return g;
 }
 
-export function buildItem(item: FurnitureItem): Group | Mesh {
+export function buildItem(item: FurnitureItem): Group {
   if (item.type === 'rug') return rug(item);
   const [x0, y0, x1, y1] = item.bbox;
   const facing = item.facing ?? 0;
@@ -203,20 +269,50 @@ export function buildItem(item: FurnitureItem): Group | Mesh {
   let dz = along ? ey : ex;
   const diag = Math.abs(Math.sin(2 * facing * (Math.PI / 180))) > 0.5;
   if (diag) dx = dz = Math.min(ex, ey);
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  const a = facing * (Math.PI / 180);
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  // Inverse of the placement below: room (x, y) to local (x, z).
+  const local = (x: number, y: number): [number, number] => [
+    (x - cx) * c + (y - cy) * s,
+    (x - cx) * s - (y - cy) * c,
+  ];
+  const localRect = (r: number[]): Rect => {
+    const [ax, az] = local(r[0]!, r[1]!);
+    const [bx, bz] = local(r[2]!, r[3]!);
+    return [Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz)];
+  };
   const g = new Group();
   g.name = `furniture-${item.id}`;
   g.userData.item = item;
   const build = BUILDERS[item.type] ?? BUILDERS.console!;
-  const h = item.z1 - item.z0;
-  build(g, dx, dz, h, MAT.base, item.params ?? {});
-  roomToThree((x0 + x1) / 2, (y0 + y1) / 2, item.z0, g.position);
+  build(g, { dx, dz, h: item.z1 - item.z0, p: item.params ?? {}, localRect });
+  // Wall-hung pieces are hidden with their wall, so they need materials of their own.
+  if (item.wall)
+    g.traverse((o) => {
+      const mesh = o as Mesh;
+      if (mesh.isMesh) mesh.material = (mesh.material as Material).clone();
+    });
+  roomToThree(cx, cy, item.z0, g.position);
   g.rotation.y = facingToRotY(facing);
   return g;
 }
 
-export function buildFurniture(items: FurnitureItem[]): Group {
+export interface Furniture {
+  group: Group;
+  /** Wall-hung pieces per wall, for the cutaway. */
+  onWall: Record<string, Group[]>;
+}
+
+export function buildFurniture(items: FurnitureItem[]): Furniture {
   const group = new Group();
   group.name = 'furniture';
-  for (const item of items) group.add(buildItem(item));
-  return group;
+  const onWall: Record<string, Group[]> = {};
+  for (const item of items) {
+    const g = buildItem(item);
+    group.add(g);
+    if (item.wall) (onWall[item.wall] ??= []).push(g);
+  }
+  return { group, onWall };
 }

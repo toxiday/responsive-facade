@@ -36,6 +36,7 @@ import {
 } from './geometry';
 
 export const PANEL_T = 0.03;
+const OVERLAP = 0.001;
 
 interface WallMeshes {
   side: Side;
@@ -59,6 +60,9 @@ export class FacadeMesh {
   ) {
     this.group.name = 'facade';
     for (const side of sides) this.walls.set(side, this.buildWall(side));
+    // Start closed; until set, every instance would sit at the identity matrix (a 1 m box at
+    // the origin).
+    this.setBits(this.bits);
   }
 
   private buildWall(side: Side): WallMeshes {
@@ -100,8 +104,11 @@ export class FacadeMesh {
           (b.p0[1] + b.p1[1]) / 2,
           (b.p0[2] + b.p1[2]) / 2,
         ).addScaledVector(outward, PANEL_T / 2);
-        const along = side === 'S' || side === 'N' ? b.p1[0] - b.p0[0] : b.p1[1] - b.p0[1];
-        const h = b.p1[2] - b.p0[2];
+        // Panels overlap by OVERLAP so no hairline cracks open between instances (the
+        // linework pass would outline them); 1 mm is far below a floor cell.
+        const along =
+          (side === 'S' || side === 'N' ? b.p1[0] - b.p0[0] : b.p1[1] - b.p0[1]) + OVERLAP;
+        const h = b.p1[2] - b.p0[2] + OVERLAP;
         // three axes: S/N walls run along x; E/W walls run along z (room y)
         sizes.push(
           side === 'S' || side === 'N'

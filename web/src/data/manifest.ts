@@ -26,7 +26,11 @@ export interface FurnitureItem {
   click: string | null;
   added: boolean;
   /** Shape parameters for the builder (bake/room.py), e.g. the sofa's chaise. */
-  params: Record<string, number | string> | null;
+  params: Record<string, number | string | number[]> | null;
+  /** Where a person using it sits or stands: x, y, facing (deg CCW from +x). */
+  seat: [number, number, number] | null;
+  /** The wall it hangs on; the cutaway hides it with that wall. */
+  wall: Side | null;
   obstacle: boolean;
   /** Floor rects [x0, y0, x1, y1]: the bbox, or the parts of an L-shaped piece. */
   footprint: [number, number, number, number][];
@@ -37,14 +41,17 @@ export interface Zone {
   y: number;
   target: number;
   radius: number;
-  role: 'activity' | 'screen_proxy' | 'ambient';
+  role: 'activity' | 'screen_proxy' | 'ambient' | 'standing';
 }
 
 export interface OccupantState {
   id: string;
   label: string;
+  /** 'standing' states cover the open floor on a lattice, one zone each. */
+  kind: 'ambient' | 'activity' | 'standing';
   zones: Zone[];
-  owner: number[];
+  /** 32x32 zone owner grid, row-major (row 0 = N edge): '.' = unowned, '0'..'9' = zone index. */
+  owner: string;
   occupied_cells: number;
 }
 
@@ -95,6 +102,13 @@ export interface Manifest {
 }
 
 export const SCHEMA = 1;
+
+/** Decode an owner string to zone indices (-1 = unowned). */
+export function ownerGrid(owner: string): Int8Array {
+  const out = new Int8Array(owner.length);
+  for (let i = 0; i < owner.length; i++) out[i] = owner[i] === '.' ? -1 : owner.charCodeAt(i) - 48;
+  return out;
+}
 
 export function checkManifest(m: Manifest): Manifest {
   const problems: string[] = [];

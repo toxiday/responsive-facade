@@ -13,6 +13,7 @@ window.__rf = { ready: false };
 
 const VIEWS: [string, string][] = [
   ['Room', '?'],
+  ['Spots', '?debug=spots&cam=top'],
   ['Pattern', '?debug=pattern'],
   ['M1 · A', '?debug=m1&case=A'],
   ['M1 · B', '?debug=m1&case=B'],
@@ -66,6 +67,15 @@ async function main(): Promise<void> {
         `(${result.lit_render} vs ${result.lit_radiance} lit cells)`,
       `Layer: ${layers} · <a href="?debug=m1&case=${c.id}&layer=shadow&view=top">top view</a>`,
     ]);
+  } else if (debug === 'spots') {
+    const { runSpots } = await import('./debug/spots');
+    stage = runSpots(manifest, host);
+    const standing = manifest.states.filter((s) => s.kind === 'standing').length;
+    const activity = manifest.states.filter((s) => s.kind === 'activity').length;
+    hud([
+      `Magenta: seats and the cooking spot (tick = facing); circles: the ${activity} activity zones.`,
+      `Blue: ${standing} standing positions on the open floor (one state each).`,
+    ]);
   } else if (debug === 'rhino') {
     const { runRhino } = await import('./debug/rhino');
     stage = await runRhino(manifest, host);
@@ -83,6 +93,9 @@ async function main(): Promise<void> {
   if (cam && ['axo', 'top', 'ne', 'se', 'sw', 'nw'].includes(cam))
     stage.rig.setView(cam as ViewName);
   if (params.get('cut') === '0') stage.cutaway.walls = false;
+  const lines = params.get('lines'); // 0 = off, n = creases only, d = silhouettes only
+  if (lines === '0') stage.edges.enabled = false;
+  else if (lines === 'n' || lines === 'd') stage.edges.setKinds(lines === 'n', lines === 'd');
   stage.invalidate();
   await whenRendered(stage);
   window.__rf.ready = true;

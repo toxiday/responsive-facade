@@ -1,12 +1,13 @@
 // Assembles the scene and owns the render loop. Renders on demand (camera moves, data
 // changes) rather than every frame, to stay light on laptops and phones.
 
-import { Scene, type Group, type Object3D } from 'three';
+import { Scene, Vector2, type Group, type Object3D } from 'three';
 import type { Manifest, Side } from '../data/manifest';
 import { FacadeMesh } from '../facade/facadeMesh';
 import { createViewRig, type ViewRig } from './camera';
 import { createCompass } from './compass';
 import { Cutaway } from './cutaway';
+import { EdgePass, withEdges } from './edges';
 import { buildFurniture } from './furniture';
 import { Heatmap } from './heatmap';
 import { PALETTE } from './materials';
@@ -25,6 +26,7 @@ export class Stage {
   readonly sun: SunLight;
   readonly heatmap: Heatmap;
   readonly cutaway: Cutaway;
+  readonly edges = new EdgePass();
   private dirty = true;
   private frames = 0;
   onFrame: (() => void) | null = null;
@@ -40,7 +42,8 @@ export class Stage {
     this.rig = createViewRig(room, this.renderer.domElement);
     this.shell = createShell(room);
     this.facade = new FacadeMesh(room, opts.facadeSides);
-    this.furniture = buildFurniture(manifest.furniture);
+    const furniture = buildFurniture(manifest.furniture);
+    this.furniture = furniture.group;
     this.sun = new SunLight(room, rendererOptions().shadowSize);
     this.heatmap = new Heatmap(room, manifest.legend);
     this.scene.add(
@@ -54,12 +57,19 @@ export class Stage {
       createCompass(room),
     );
 
+    // Linework on the shell, the furniture and the opaque facade panels.
+    withEdges(this.shell.group);
+    withEdges(this.furniture);
+    for (const w of this.facade.walls.values()) withEdges(w.solid);
+
     const parts: Record<Side, Object3D[]> = this.facade.parts();
-    for (const side of room.sides) parts[side].push(...this.shell.walls[side]);
+    for (const side of room.sides)
+      parts[side].push(...this.shell.walls[side], ...(furniture.onWall[side] ?? []));
     this.cutaway = new Cutaway(
       parts,
       [this.shell.ceiling],
       this.shell.corners.map((c) => ({ obj: c.mesh, sides: c.sides })),
+      { sides: this.shell.marks, corners: this.shell.cornerMarks },
     );
 
     this.rig.controls.addEventListener('change', () => this.invalidate());
@@ -86,6 +96,8 @@ export class Stage {
     const w = this.host.clientWidth;
     const h = this.host.clientHeight;
     this.renderer.setSize(w, h);
+    const buf = this.renderer.getDrawingBufferSize(new Vector2());
+    this.edges.setSize(buf.x, buf.y, this.renderer.getPixelRatio());
     this.rig.resize(w, h);
     this.invalidate();
   }
@@ -97,6 +109,7 @@ export class Stage {
     this.dirty = false;
     this.cutaway.update(this.rig.camera, this.rig.target);
     this.renderer.render(this.scene, this.rig.camera);
+    this.edges.render(this.renderer, this.scene, this.rig.camera);
     this.frames++;
     this.onFrame?.();
   };

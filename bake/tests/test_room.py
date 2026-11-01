@@ -39,7 +39,8 @@ def test_added_desk_is_clear_of_surveyed_furniture(items):
 
 # Pieces that are meant to share floor area: chairs and stools tucked under tops, the sink
 # set into the island, the TV standing on its console.
-TUCKED = {("chair", "dining_table"), ("stool", "island"), ("sink", "island")}
+TUCKED = {("chair", "dining_table"), ("chair", "desk"), ("stool", "island"),
+          ("sink", "island")}
 
 
 def test_no_furniture_collides(items):
@@ -79,7 +80,7 @@ def test_dining_chairs_are_square_and_even(items):
     by_id = {i.id: i for i in items}
     x0, y0, x1, y1 = by_id["dining_table"].bbox
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    chairs = [i for i in items if i.type == "chair"]
+    chairs = [i for i in items if i.id.startswith("dining_chair_")]
     assert len(chairs) == 6
     for c in chairs:
         assert c.facing in (0.0, 90.0, 180.0, 270.0), c.id
@@ -110,6 +111,80 @@ def test_stools_are_pulled_out_from_under_the_island(items):
         assert s.bbox[1] < island.bbox[1]            # sticks out past the counter edge
 
 
+def test_dining_table_is_standard_width(items):
+    t = next(i for i in items if i.id == "dining_table")
+    assert t.bbox[3] - t.bbox[1] == pytest.approx(room.DINING_TABLE_WIDTH, abs=1e-3)
+
+
+def test_desk_chair_is_a_dining_chair_tucked_under_the_desk(items):
+    by_id = {i.id: i for i in items}
+    chair, dining, desk = by_id["desk_chair"], by_id["dining_chair_4"], by_id["desk"]
+    assert chair.type == dining.type == "chair"
+    size = lambda i: sorted((i.bbox[2] - i.bbox[0], i.bbox[3] - i.bbox[1]))
+    assert size(chair) == pytest.approx(size(dining), abs=1e-3)
+    assert chair.z1 == dining.z1
+    assert chair.facing == 180.0
+    assert chair.bbox[0] == pytest.approx(desk.bbox[2] - room.DINING_TUCK, abs=1e-3)
+
+
+def test_sink_is_cut_into_the_island(items):
+    by_id = {i.id: i for i in items}
+    island, sink = by_id["island"], by_id["sink"]
+    cut = island.params["cutout"]
+    assert cut == sink.params["basin"]
+    base_y0 = island.bbox[1] + island.params["overhang"]
+    assert island.bbox[0] < cut[0] < cut[2] < island.bbox[2]
+    assert base_y0 < cut[1] < cut[3] < island.bbox[3]     # over the cabinets, not the overhang
+    assert sink.bbox[0] <= cut[0] and cut[2] <= sink.bbox[2]
+    assert sink.bbox[1] < cut[1]                          # faucet strip on the far (S) side
+
+
+def test_upper_cabinets_hang_on_the_north_wall(items):
+    hung = {i.id: i.wall for i in items if i.wall}
+    assert hung == {"wall_cabinets": "N", "fridge_cabinet": "N"}
+    for i in items:
+        if i.wall == "N":
+            assert config.ROOM_D - i.bbox[3] < 0.1
+
+
+def test_every_seat_is_clickable_and_on_its_piece(items):
+    seated = [i for i in items if i.seat]
+    assert {i.type for i in seated} == {"sectional", "armchair", "chair", "stool"}
+    assert len(seated) == 1 + 2 + 7 + 3
+    acts = {a.id for a in room.activities()}
+    for i in seated:
+        assert i.click in acts, i.id
+        x, y, _ = i.seat
+        assert any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in i.footprint), i.id
+
+
+def test_both_armchairs_are_reading_spots(states, items):
+    by_id = {i.id: i for i in items}
+    for side in ("w", "e"):
+        st = states[f"lounge_read_{side}"]
+        seat = by_id[f"armchair_{side}"].seat
+        assert (st.zones[0].x, st.zones[0].y) == pytest.approx(seat[:2], abs=1e-3)
+        assert by_id[f"armchair_{side}"].click == f"lounge_read_{side}"
+
+
+def test_standing_points_cover_the_open_floor(states, items):
+    standing = [s for s in states.values() if s.kind == "standing"]
+    points = room.standing_points(items)
+    assert len(standing) == len(points) > 20
+    rects = [r for i in items if i.obstacle for r in i.footprint]
+    for p in points:
+        assert room._standable(p, rects), p
+    for s in standing:
+        (z,) = s.zones
+        assert z.target == room.STAND_LUX and z.radius == room.ZONE_RADIUS
+    # Wherever a person can stand, a standing point is close by (fine probe, off the fill grid).
+    gx, gy = np.meshgrid(np.arange(0.27, config.ROOM_W, 0.07), np.arange(0.27, config.ROOM_D, 0.07))
+    for x, y in zip(gx.ravel(), gy.ravel()):
+        if room._standable((x, y), rects):
+            d = min(np.hypot(x - px, y - py) for px, py in points)
+            assert d <= room.STAND_COVER + 0.05, (round(x, 2), round(y, 2), d)
+
+
 def test_rug_and_wall_cabinets_are_not_obstacles(items):
     by_id = {i.id: i for i in items}
     assert not by_id["rug"].obstacle
@@ -120,10 +195,13 @@ def test_rug_and_wall_cabinets_are_not_obstacles(items):
 def test_seven_states_with_v3_activity_lux(states):
     v3 = config.import_v3()
     lux = dict(v3.live_solver.ACTIVITIES)
-    assert list(states) == ["ambient", "couch_relax", "couch_tv", "lounge_read", "dining",
-                            "cooking", "desk"]
+    assert [k for k, s in states.items() if s.kind != "standing"] == [
+        "ambient", "couch_relax", "couch_tv", "lounge_read_w", "lounge_read_e", "dining",
+        "counter", "cooking", "desk"]
     assert states["couch_relax"].zones[0].target == lux["Relaxing / TV"]
-    assert states["lounge_read"].zones[0].target == lux["Reading"]
+    assert states["lounge_read_w"].zones[0].target == lux["Reading"]
+    assert states["lounge_read_e"].zones[0].target == lux["Reading"]
+    assert states["counter"].zones[0].target == lux["Dining"]
     assert states["dining"].zones[0].target == lux["Dining"]
     assert states["cooking"].zones[0].target == lux["Cooking"]
     assert states["desk"].zones[0].target == lux["Desk work"]

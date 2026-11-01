@@ -2,6 +2,8 @@
 // still cast shadows, otherwise the sun would pour in through the missing ceiling.
 // colorWrite = false hides the surface; depthWrite = false stops the invisible surface from
 // hiding the interior behind it; castShadow stays on, so the shadow pass still sees it.
+// Pieces hung on a wall (the upper kitchen cabinets) are hidden with it. While a wall is
+// hidden, its floor mark is shown so the cut still reads on plan.
 
 import type { Camera, Material, Mesh, Object3D, Vector3 } from 'three';
 import { Vector3 as V3 } from 'three';
@@ -24,6 +26,11 @@ function setHidden(obj: Object3D, hidden: boolean) {
   });
 }
 
+export interface CutawayMarks {
+  sides: Record<Side, Object3D[]>;
+  corners: { obj: Object3D; sides: [Side, Side] }[];
+}
+
 export class Cutaway {
   private readonly normals: Record<Side, V3>;
   private hidden: Record<Side, boolean> = { S: false, N: false, E: false, W: false };
@@ -34,6 +41,7 @@ export class Cutaway {
     private readonly parts: Record<Side, Object3D[]>,
     ceiling: Object3D[],
     private readonly corners: { obj: Object3D; sides: [Side, Side] }[],
+    private readonly marks: CutawayMarks = { sides: { S: [], N: [], E: [], W: [] }, corners: [] },
   ) {
     this.normals = {
       S: roomToThree(...OUTWARD.S),
@@ -53,12 +61,15 @@ export class Cutaway {
       if (hide !== this.hidden[side]) {
         this.hidden[side] = hide;
         for (const p of this.parts[side]) setHidden(p, hide);
+        for (const m of this.marks.sides[side]) m.visible = hide;
         changed = true;
       }
     }
-    if (changed)
-      for (const c of this.corners)
-        setHidden(c.obj, this.hidden[c.sides[0]] || this.hidden[c.sides[1]]);
+    if (changed) {
+      const cut = (sides: [Side, Side]) => this.hidden[sides[0]] || this.hidden[sides[1]];
+      for (const c of this.corners) setHidden(c.obj, cut(c.sides));
+      for (const c of this.marks.corners) c.obj.visible = cut(c.sides);
+    }
     return changed;
   }
 

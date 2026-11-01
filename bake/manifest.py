@@ -1,6 +1,6 @@
 """web/public/data/manifest.json: everything the site needs that is not per-slot data.
 
-The room, conventions, furniture, activities, the seven states (with zone grids painted by
+The room, conventions, furniture, activities, the occupant states (with zone grids painted by
 v3's `occupant_owner_grid`, so the browser never re-implements zone painting), the legend
 colour ramp sampled from v3's `facade_viz.LUX_CMAP`, and the city/day list. Per-slot
 facades and lux are added by `pack.py` (M2).
@@ -18,6 +18,14 @@ SCHEMA = 1
 CITY_LABELS = {"houston": "Houston, TX", "boston": "Boston, MA", "seattle": "Seattle, WA"}
 
 
+def owner_string(owner) -> str:
+    """A 32x32 owner grid as 1024 characters, row-major: '.' = unowned, '0'..'9' = zone."""
+    flat = owner.reshape(-1).astype(int).tolist()
+    if len(flat) != 1024 or max(flat) > 9:
+        raise ValueError("owner grid must be 32x32 with at most 10 zones")
+    return "".join("." if v < 0 else str(v) for v in flat)
+
+
 def legend() -> dict:
     v3 = config.import_v3()
     import facade_viz  # v3 module; MPLBACKEND=Agg is set by config.apply_env
@@ -33,7 +41,7 @@ def build() -> dict:
     states = []
     for st in room.states():
         tgt, owner = room.target_and_owner(st)
-        states.append({**asdict(st), "owner": owner.reshape(-1).astype(int).tolist(),
+        states.append({**asdict(st), "owner": owner_string(owner),
                        "occupied_cells": int((owner >= 0).sum())})
     cities = []
     for city in config.CITIES:
