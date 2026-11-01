@@ -7,6 +7,7 @@ little-endian.
 
 | File | What |
 |---|---|
+| `index.json` | `{"schema": 1, "months": {city: [month, ...]}}`: the city-months that have data; the site offers only these |
 | `manifest.json` | Room, conventions, furniture, activities, occupant states (zones and owner grids), legend, cities and their baked days |
 | `{city}/{MM}.bin` | Facades and lux for every slot of that month's baked day, for every state |
 | `{city}/{MM}.json` | Slot list (stamp, sun, sky), the record state order, solve outcome and metrics per record |

@@ -38,7 +38,24 @@ const SHOTS = [
   ['m1-B-shadow-top', '?debug=m1&case=B&layer=shadow&view=top'],
   ['m1-B-radiance-top', '?debug=m1&case=B&layer=radiance&view=top'],
   ...bakeShots(),
+  ...appShots(),
 ].filter(([name]) => !args.only || name.startsWith(args.only));
+
+// The demo (`--only app`): a few selections, and one change frozen mid-way through the facade
+// animation (the third entry runs in the page after load).
+function appShots() {
+  const q = (state, slot, extra = '') =>
+    `?city=houston&month=12&state=${state}&slot=${slot}${extra}`;
+  return [
+    ['app-ambient', '?'],
+    ['app-couch_relax-radiance', q('couch_relax', '12:30', '&layer=radiance')],
+    ['app-dining-surrogate', q('dining', '11:30', '&layer=surrogate')],
+    ['app-desk-1130', q('desk', '11:30')],
+    ['app-couch_tv-1630', q('couch_tv', '16:30')],
+    ['app-baseline-radiance', q('baseline', '11:30', '&layer=radiance')],
+    ['app-flip-mid', q('couch_relax', '10:30'), () => window.__rf.app.previewAt({ slot: 3 }, 450)],
+  ];
+}
 
 // Bake review (`--only bake`): one state through the day, every activity at the clearest
 // hour with the Radiance heatmap, surrogate against Radiance, and the facade from outside.
@@ -104,7 +121,7 @@ async function writeRetry(path, data) {
 const results = {};
 let failed = false;
 try {
-  for (const [name, query] of SHOTS) {
+  for (const [name, query, action] of SHOTS) {
     await page.goto(base + query);
     await page.waitForFunction(
       () => window.__rf && (window.__rf.ready || window.__rf.error),
@@ -115,7 +132,8 @@ try {
     );
     const rf = await page.evaluate(() => window.__rf);
     if (rf.error) throw new Error(`${name}: ${rf.error}`);
-    await page.waitForTimeout(400);
+    if (action) await page.evaluate(action);
+    await page.waitForTimeout(action ? 1200 : 400);
     await writeRetry(join(out, `${name}.png`), await page.screenshot());
     if (rf.m1) {
       const { case: id, iou_render, lit_render, lit_radiance } = rf.m1;

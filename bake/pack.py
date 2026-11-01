@@ -3,7 +3,8 @@
 The binary layout is in format.py (and web/public/data/FORMAT.md). The sidecar lists the
 slots (stamp, sun, sky), the state order of the records (the manifest's states, then
 "baseline"), and per record the solve outcome and metrics (report.metrics), so the site and
-its consistency test have the reference numbers.
+its consistency test have the reference numbers. index.json lists the city-months that have
+data, so the site only offers those.
 """
 
 from __future__ import annotations
@@ -57,15 +58,32 @@ def pack_month(city: str, month: int) -> dict:
             "states": len(states)}
 
 
+def write_index() -> dict:
+    """web/public/data/index.json: {"schema": 1, "months": {city: [month, ...]}}."""
+    root = Path(config.WEB_DATA)
+    months: dict[str, list[int]] = {}
+    for city in config.CITIES:
+        found = sorted(int(b.stem) for b in (root / city).glob("[0-1][0-9].bin")
+                       if b.with_suffix(".json").exists())
+        if found:
+            months[city] = found
+    index = {"schema": 1, "months": months}
+    path = config.assert_writable(root / "index.json")
+    path.write_text(json.dumps(index, separators=(",", ":")))
+    return index
+
+
 def data_size() -> int:
     return sum(p.stat().st_size for p in Path(config.WEB_DATA).rglob("*") if p.is_file())
 
 
 def run(cities, months) -> list[dict]:
     out = [pack_month(c, m) for c in cities for m in months]
+    index = write_index()
     total = data_size()
     for r in out:
         print(f"  {r['city']} {r['month']:02d}: {r['slots']} slots x {r['states']} states, "
               f"{r['bytes'] / 2 ** 20:.2f} MB")
     print(f"  data total {total / 2 ** 20:.2f} MB (budget {SIZE_BUDGET / 2 ** 20:.0f} MB)")
+    print(f"  index: {index['months']}")
     return out

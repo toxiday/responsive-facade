@@ -108,6 +108,7 @@ def cmd_fixtures(_args) -> int:
     from . import fixtures
 
     print(fixtures.write())
+    print(fixtures.write_month_fixture())
     return 0
 
 

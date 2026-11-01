@@ -10,6 +10,12 @@
 // Panels are full size so no light leaks between them; a line grid draws the panel joints.
 // Hidden instances are scaled to zero. Each wall also has a dashed magenta outline of its window openings (the presentation
 // accent), which the cutaway shows while the wall itself is hidden.
+//
+// animateTo changes design with only the changed panels moving (guidelines §3.4): each pivots
+// on its vertical axis, a panel that opens turning edge-on and going, one that closes coming in
+// edge-on and turning flat. The turns sweep along each wall with a little fixed jitter and are
+// all done within FLIP_MS + SWEEP_MS + JITTER_MS. Glass and the shadow switch halfway through
+// each turn.
 
 import {
   BoxGeometry,
@@ -69,10 +75,41 @@ interface WallMeshes {
 
 const ZERO = new Matrix4().makeScale(0, 0, 0);
 
+const FLIP_MS = 350;
+const SWEEP_MS = 400;
+const JITTER_MS = 200;
+
+/** One panel turning between wall and window (animateTo). */
+interface Flip {
+  w: WallMeshes;
+  i: number;
+  toWindow: boolean;
+  start: number;
+}
+
+/** Deterministic 0–1 jitter per panel, so a given change always plays the same way. */
+function jitter(n: number): number {
+  const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+const UP = new Vector3(0, 1, 0);
+const _p = new Vector3();
+const _q = new Quaternion();
+const _s = new Vector3();
+const _m = new Matrix4();
+
+/** A panel transform turned by `angle` about its own vertical axis. */
+function turned(panel: Matrix4, angle: number): Matrix4 {
+  panel.decompose(_p, _q, _s);
+  return _m.compose(_p, _q.setFromAxisAngle(UP, angle), _s);
+}
+
 export class FacadeMesh {
   readonly group = new Group();
   readonly walls = new Map<Side, WallMeshes>();
   private bits: Uint8Array = new Uint8Array(4 * PANELS_PER_WALL);
+  private flips: Flip[] = [];
   // Screen-space width, so it needs the viewport size (setLineResolution).
   private readonly outline = new LineMaterial({
     color: PALETTE.accent,
@@ -208,9 +245,56 @@ export class FacadeMesh {
     return lines;
   }
 
-  /** Show a design: 2048 values, wall-major S,N,E,W, row 0 = ceiling, 1 = window. */
+  /** Show a design at once: 2048 values, wall-major S,N,E,W, row 0 = ceiling, 1 = window. */
   setBits(bits: ArrayLike<number>): void {
+    this.flips = [];
     this.bits = Uint8Array.from(bits, (v) => (v ? 1 : 0));
+    this.applyAll();
+  }
+
+  /** Change to a design with the changed panels turning (see the header); `now` in ms. */
+  animateTo(bits: ArrayLike<number>, now: number): void {
+    if (this.flips.length) this.applyAll(); // a change still running jumps to its end
+    const next = Uint8Array.from(bits, (v) => (v ? 1 : 0));
+    const flips: Flip[] = [];
+    for (const [side, w] of this.walls)
+      for (let i = 0; i < PANELS_PER_WALL; i++) {
+        const col = i % COLS;
+        const b = bitIndex(side, Math.floor(i / COLS), col);
+        if (next[b] === this.bits[b]) continue;
+        const delay = (col / (COLS - 1)) * SWEEP_MS + jitter(b) * JITTER_MS;
+        flips.push({ w, i, toWindow: next[b] === 1, start: now + delay });
+      }
+    this.bits = next;
+    for (const w of this.walls.values()) this.updateGhost(w);
+    this.flips = flips;
+  }
+
+  /** Advance the turning panels to `now` (ms); true while the facade still needs frames. */
+  tick(now: number): boolean {
+    if (!this.flips.length) return false;
+    let running = false;
+    for (const f of this.flips) {
+      const p = (now - f.start) / FLIP_MS;
+      if (p < 1) running = true;
+      if (p < 0) continue; // not started: still showing the old state
+      const [panel, pane, shade] = f.w.layers[f.i]!;
+      const angle = (f.toWindow ? p : 1 - p) * (Math.PI / 2);
+      const half = p >= 0.5;
+      f.w.solid.setMatrixAt(f.i, f.toWindow && p >= 1 ? ZERO : turned(panel, angle));
+      f.w.glass.setMatrixAt(f.i, f.toWindow === half ? pane : ZERO);
+      f.w.shadow.setMatrixAt(f.i, f.toWindow === half ? ZERO : shade);
+    }
+    for (const w of this.walls.values())
+      for (const mesh of [w.solid, w.glass, w.shadow]) mesh.instanceMatrix.needsUpdate = true;
+    if (!running) {
+      this.flips = [];
+      this.applyAll();
+    }
+    return true; // the last step still has to be drawn
+  }
+
+  private applyAll(): void {
     for (const [side, w] of this.walls) {
       for (let i = 0; i < PANELS_PER_WALL; i++) {
         const row = Math.floor(i / COLS);

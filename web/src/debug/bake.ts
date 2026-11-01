@@ -1,34 +1,17 @@
-// ?debug=bake — one baked record in the scene, for reviewing the bake ahead of M3.
+// ?debug=bake — one baked record in the scene, for reviewing the bake.
 //   ?debug=bake&city=houston&month=12&state=couch_relax&slot=12:30&layer=radiance|surrogate|none
-// The facade, the sun and the heatmap all come from the packed month file. The magenta
-// outline is the state's zone cells (the owner grid the optimizer scored), the dot the
-// occupant. `state=baseline` is the conventional L05 facade at the same hour.
-// The room is lit by the record's Radiance lux without its direct sun (scene/indirect.ts).
+// The same record display as the app (app/record.ts), with a HUD of the raw solve outcome.
 
-import { CircleGeometry, Mesh, MeshBasicMaterial } from 'three';
-import type { Manifest, OccupantState } from '../data/manifest';
-import { ownerGrid } from '../data/manifest';
-import { loadMonth } from '../data/month';
-import { litMask } from '../facade/sunlight';
-import { indirectLux } from '../scene/indirect';
-import type { RecordMetrics, SlotMeta } from '../data/month';
-import { roomToThree } from '../scene/frame';
+import type { Manifest } from '../data/manifest';
+import { loadMonth, type SlotMeta } from '../data/month';
+import { showRecord, type Layer, type RecordView } from '../app/record';
 import { Stage } from '../scene/stage';
-import { maskOutline } from './overlays';
 
-export interface BakeView {
+export interface BakeView extends RecordView {
   stage: Stage;
-  stateId: string;
-  state: OccupantState | undefined;
-  slot: SlotMeta;
   slots: SlotMeta[];
   day: number;
-  layer: string;
-  fill: 'radiance' | 'surrogate';
-  tvOn: boolean;
-  ship: string;
-  flips: number | null;
-  metrics: RecordMetrics;
+  layer: Layer;
 }
 
 export async function runBake(
@@ -37,71 +20,22 @@ export async function runBake(
   params: URLSearchParams,
 ): Promise<BakeView> {
   const city = params.get('city') ?? manifest.cities[0]!.id;
-  const month = Number(params.get('month') ?? 12);
-  const data = await loadMonth(city, month);
-  const stateId = params.get('state') ?? 'couch_relax';
-  const k = data.meta.states.indexOf(stateId);
-  if (k < 0) throw new Error(`no baked state ${stateId}`);
+  const data = await loadMonth(city, Number(params.get('month') ?? 12));
   const s = Math.max(
     0,
     data.meta.slots.findIndex((x) => x.label === (params.get('slot') ?? '12:30')),
   );
-  const slot = data.meta.slots[s]!;
-  const layer = params.get('layer') ?? 'radiance';
-  const { room } = manifest;
-
+  const layer = (params.get('layer') ?? 'radiance') as Layer;
   const stage = new Stage(manifest, host);
-  const bits = data.facade(s, k);
-  stage.facade.setBits(bits);
-  stage.setSun({ sunRoom: slot.sun_room, alt: slot.alt, dni: slot.dni, dhi: slot.dhi });
-  const rad = data.lux(s, k, 'radiance');
-  // No beam to remove when DNI is negligible (the display sun is off then too).
-  const lit =
-    slot.dni >= 20
-      ? litMask(bits, slot.sun_room, room.width, room.depth, room.height, room.sensor_height)
-      : null;
-  stage.fill.set(indirectLux(rad ?? data.lux(s, k, 'surrogate')!, lit));
-  const fill: BakeView['fill'] = rad ? 'radiance' : 'surrogate';
-  if (layer === 'radiance' || layer === 'surrogate') {
-    const lux = data.lux(s, k, layer);
-    if (lux) {
-      stage.heatmap.set(lux);
-      stage.heatmap.mesh.visible = true;
-    }
-  }
-
-  const state = manifest.states.find((x) => x.id === stateId);
-  // The TV is on in the states that keep a screen zone dim (watching TV).
-  const tvOn = state?.zones.some((z) => z.role === 'screen_proxy') ?? false;
-  if (tvOn) await stage.tv?.setOn(true);
-  if (state && state.kind !== 'ambient') {
-    const mask = Array.from(ownerGrid(state.owner), (v) => (v >= 0 ? 1 : 0));
-    stage.scene.add(maskOutline(room, mask, room.sensor_height + 0.004));
-    const z = state.zones[0]!;
-    const dot = new Mesh(
-      new CircleGeometry(0.09, 24),
-      new MeshBasicMaterial({ color: 0xec008c, depthTest: false, transparent: true }),
-    );
-    dot.rotation.x = -Math.PI / 2;
-    dot.renderOrder = 11;
-    roomToThree(z.x, z.y, room.sensor_height + 0.006, dot.position);
-    stage.scene.add(dot);
-  }
-  stage.invalidate();
-
-  const rec = data.meta.records[stateId]!;
-  return {
+  const view = showRecord(
     stage,
-    stateId,
-    state,
-    slot,
-    slots: data.meta.slots,
-    day: data.meta.day,
+    manifest,
+    data,
+    s,
+    params.get('state') ?? 'couch_relax',
     layer,
-    fill,
-    tvOn,
-    ship: rec.ship[s]!,
-    flips: rec.flips[s] ?? null,
-    metrics: rec.metrics[s]!,
-  };
+    false,
+  );
+  if (view.tvOn) await stage.tv?.setOn(true); // the area light loads on first use
+  return { ...view, stage, slots: data.meta.slots, day: data.meta.day, layer };
 }

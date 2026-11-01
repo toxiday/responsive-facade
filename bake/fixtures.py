@@ -1,4 +1,5 @@
-"""Python ground truth for the TypeScript tests (web/src/__fixtures__/conventions.json).
+"""Python ground truth for the TypeScript tests (web/src/__fixtures__/conventions.json, and
+month.bin / month.json for the month decoder).
 
 The browser re-creates the facade panels and floor cells itself (guidelines §3.4). These
 fixtures come straight from v3's `facade_panel_boxes`, `cell_centres` and `wall_azimuths`,
@@ -54,3 +55,37 @@ def write() -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(build(), separators=(",", ":")))
     return str(path)
+
+
+def write_month_fixture() -> str:
+    """A tiny month file (2 slots x 3 states) written by format.py, with the values the
+    TypeScript decoder must read back: set panel bits, and lux at a few cells (rounded, with
+    65535 for a record without Radiance)."""
+    import numpy as np
+
+    from . import format as fmt
+
+    rng = np.random.default_rng(7)
+    probe = [0, 1, 31, 32, 517, 1023]
+    records, expect = [], []
+    for slot in range(2):
+        row = []
+        for state in range(3):
+            bits = np.zeros(2048, dtype=np.uint8)
+            on = sorted({0, 7, 8, 511, 512, 2047, *rng.integers(0, 2048, 20).tolist()})
+            bits[on] = 1
+            sur = rng.uniform(0, 4000, 1024)
+            sur[5] = 70000.0  # clamps to 65534
+            rad = None if (slot, state) == (1, 2) else rng.uniform(0, 4000, 1024)
+            row.append((bits, sur, rad))
+            expect.append({"slot": slot, "state": state, "bits": on,
+                           "sur": {str(i): int(min(round(sur[i]), 65534)) for i in probe + [5]},
+                           "rad": None if rad is None else
+                           {str(i): int(round(rad[i])) for i in probe}})
+        records.append(row)
+    path = config.assert_writable(config.WEB_FIXTURES / "month.bin")
+    fmt.write_month(path, 12, 0, records)
+    (path.parent / "month.json").write_text(json.dumps(
+        {"month": 12, "n_slots": 2, "n_states": 3, "records": expect}, separators=(",", ":")))
+    return str(path)
+

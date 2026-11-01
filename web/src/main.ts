@@ -1,18 +1,17 @@
 import './style.css';
 import { loadManifest } from './data/manifest';
-import type { Vec3 } from './data/manifest';
 import type { ViewName } from './scene/camera';
 import type { Stage } from './scene/stage';
 
 declare global {
   interface Window {
-    __rf: { ready: boolean; error?: string; m1?: unknown };
+    __rf: { ready: boolean; error?: string; m1?: unknown; app?: unknown };
   }
 }
 window.__rf = { ready: false };
 
 const VIEWS: [string, string][] = [
-  ['Room', '?'],
+  ['App', '?'],
   ['Spots', '?debug=spots&cam=top'],
   ['Bake', '?debug=bake'],
   ['Pattern', '?debug=pattern'],
@@ -117,13 +116,16 @@ async function main(): Promise<void> {
     stage = await runRhino(manifest, host);
     hud(['501.6 optimised facade; magenta = merged glazing from the Rhino model.']);
   } else {
-    const { Stage } = await import('./scene/stage');
-    const fixture = (await import('./__fixtures__/m1.json')).default;
-    const c = fixture.cases[0]!;
-    stage = new Stage(manifest, host);
-    stage.facade.setBits(c.facade);
-    stage.setSun({ sunRoom: c.sun_room as Vec3, alt: c.alt, dni: c.dni, dhi: c.dhi });
-    hud([`Test facade and hand-written slot: Houston ${c.month}/${c.day} ${c.slot} LST.`]);
+    // The demo itself (app/app.ts); the debug views above keep the old HUD and links.
+    const [{ App }, { loadIndex }] = await Promise.all([
+      import('./app/app'),
+      import('./data/store'),
+    ]);
+    document.getElementById('hud')!.hidden = true;
+    const app = new App(manifest, host, document.body, await loadIndex());
+    await app.start(params);
+    stage = app.stage;
+    window.__rf.app = app;
   }
   const cam = params.get('cam') ?? params.get('view');
   if (cam && ['axo', 'top', 'ne', 'se', 'sw', 'nw'].includes(cam))

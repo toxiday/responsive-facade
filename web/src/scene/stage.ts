@@ -12,6 +12,7 @@ import { buildFurniture } from './furniture';
 import { Heatmap } from './heatmap';
 import { DaylightFill } from './indirect';
 import { TvGlow } from './tv';
+import { ZoneMarks } from './zones';
 import { PALETTE } from './materials';
 import { createRenderer, rendererOptions } from './renderer';
 import { createShell, type Shell } from './shell';
@@ -31,6 +32,9 @@ export class Stage {
   readonly fill: DaylightFill;
   /** The TV's screen, light and halo; off until a TV state is shown (tv.ts). */
   readonly tv: TvGlow | null;
+  readonly zones: ZoneMarks;
+  /** Clock for the facade animation (ms); null = real time. Scripted shots freeze it. */
+  timeOverride: number | null = null;
   readonly cutaway: Cutaway;
   readonly edges = new EdgePass();
   readonly compass: Compass;
@@ -52,7 +56,8 @@ export class Stage {
     const furniture = buildFurniture(manifest.furniture);
     this.furniture = furniture.group;
     this.sun = new SunLight(room, rendererOptions().shadowSize);
-    this.heatmap = new Heatmap(room, manifest.legend);
+    this.heatmap = new Heatmap(room, manifest.legend, manifest.furniture);
+    this.zones = new ZoneMarks(room);
     this.fill = new DaylightFill(room);
     const tv = manifest.furniture.find((f) => f.type === 'tv');
     this.tv = tv ? new TvGlow(tv) : null;
@@ -65,6 +70,7 @@ export class Stage {
       this.sun.light.target,
       this.sun.sky,
       this.heatmap.mesh,
+      this.zones.group,
     );
     this.compass = new Compass(host.parentElement ?? document.body, room.north_angle);
 
@@ -104,6 +110,11 @@ export class Stage {
     this.invalidate();
   }
 
+  /** The animation clock (ms). */
+  now(): number {
+    return this.timeOverride ?? performance.now();
+  }
+
   invalidate(): void {
     this.dirty = true;
   }
@@ -127,7 +138,8 @@ export class Stage {
   private loop = (): void => {
     requestAnimationFrame(this.loop);
     const moving = this.rig.controls.update();
-    if (!this.dirty && !moving) return;
+    const turning = this.facade.tick(this.now());
+    if (!this.dirty && !moving && !turning) return;
     this.dirty = false;
     this.cutaway.update(this.rig.camera, this.rig.target);
     this.compass.update(this.rig.camera, this.rig.target);

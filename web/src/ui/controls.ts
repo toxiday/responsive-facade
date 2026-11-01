@@ -1,0 +1,165 @@
+// The control panel: city, baked day, time (snapping to the baked hours), activity, and the
+// heatmap layer with its legend. Only city-months that have data are offered.
+
+import type { Legend } from '../data/manifest';
+import type { SlotMeta } from '../data/month';
+import type { Layer } from '../app/record';
+
+export const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+
+export interface Choice {
+  id: string;
+  label: string;
+}
+
+export interface CityChoice extends Choice {
+  /** Baked months with their day of the month. */
+  months: { month: number; day: number }[];
+}
+
+export interface Selection {
+  city: string;
+  month: number;
+  slot: number;
+  state: string;
+  layer: Layer;
+}
+
+const LAYERS: [Layer, string][] = [
+  ['none', 'Off'],
+  ['radiance', 'Radiance'],
+  ['surrogate', 'Surrogate'],
+];
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string> = {},
+  text = '',
+): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text) e.textContent = text;
+  return e;
+}
+
+/** The deck's legend (Facade Optimizer presentation): bold title, ticks every 500 lux. */
+function legendBar(legend: Legend): HTMLElement {
+  const box = el('div', { class: 'legend' });
+  const title = el('div', { class: 'legend-title' });
+  title.append(el('strong', {}, 'Illuminance'), el('span', {}, ' lux'));
+  const stops = [];
+  for (let i = 0; i <= 16; i++) {
+    const [r, g, b] = legend.lut[Math.round((i / 16) * 255)]!;
+    stops.push(`rgb(${r} ${g} ${b}) ${(i / 16) * 100}%`);
+  }
+  const bar = el('div', { class: 'legend-bar' });
+  bar.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
+  const ticks = el('div', { class: 'legend-ticks' });
+  for (let v = 0; v <= legend.vmax; v += 500) {
+    const t = el('span', {}, v === legend.vmax ? `${v}+` : `${v}`);
+    t.style.left = `${(v / legend.vmax) * 100}%`;
+    ticks.append(t);
+  }
+  const note = el(
+    'div',
+    { class: 'legend-note' },
+    `On the work plane, ${0.6} m up. White line ${legend.usable[0]} lux, dark line ${legend.glare} lux.`,
+  );
+  box.append(title, bar, ticks, note);
+  return box;
+}
+
+export class Controls {
+  readonly el: HTMLElement;
+  onChange: (patch: Partial<Selection>) => void = () => {};
+  private readonly city: HTMLSelectElement;
+  private readonly month: HTMLSelectElement;
+  private readonly slot: HTMLInputElement;
+  private readonly time: HTMLOutputElement;
+  private readonly state: HTMLSelectElement;
+  private readonly layers = new Map<Layer, HTMLButtonElement>();
+  private readonly legend: HTMLElement;
+  private slots: SlotMeta[] = [];
+
+  constructor(
+    parent: HTMLElement,
+    private readonly cities: CityChoice[],
+    activities: Choice[],
+    legend: Legend,
+  ) {
+    this.el = el('section', { class: 'panel', 'aria-label': 'Controls' });
+    const head = el('header');
+    head.append(
+      el('h1', {}, 'Responsive Facade'),
+      el('p', { class: 'dim' }, 'Unit 501.6. A facade that reshapes itself for each activity.'),
+    );
+
+    this.city = el('select', { 'aria-label': 'City' });
+    for (const c of cities) this.city.append(el('option', { value: c.id }, c.label));
+    this.city.addEventListener('change', () => {
+      const c = this.cities.find((x) => x.id === this.city.value)!;
+      this.onChange({ city: c.id, month: c.months[0]!.month });
+    });
+
+    this.month = el('select', { 'aria-label': 'Day' });
+    this.month.addEventListener('change', () => this.onChange({ month: Number(this.month.value) }));
+
+    this.slot = el('input', { type: 'range', min: '0', step: '1', 'aria-label': 'Time of day' });
+    this.slot.addEventListener('input', () => this.onChange({ slot: Number(this.slot.value) }));
+    this.time = el('output', { class: 'time-label' });
+
+    this.state = el('select', { 'aria-label': 'Activity' });
+    for (const a of activities) this.state.append(el('option', { value: a.id }, a.label));
+    this.state.addEventListener('change', () => this.onChange({ state: this.state.value }));
+
+    const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Heatmap' });
+    for (const [id, label] of LAYERS) {
+      const b = el('button', { type: 'button', 'data-layer': id }, label);
+      b.addEventListener('click', () => this.onChange({ layer: id }));
+      this.layers.set(id, b);
+      seg.append(b);
+    }
+    this.legend = legendBar(legend);
+
+    const row = (label: string, ...kids: HTMLElement[]) => {
+      const r = el('div', { class: 'row' });
+      r.append(el('span', { class: 'row-label' }, label), ...kids);
+      return r;
+    };
+    const timeBox = el('div', { class: 'time' });
+    timeBox.append(this.slot, this.time);
+    this.el.append(
+      head,
+      row('Place', this.city, this.month),
+      row('Time', timeBox),
+      row('Activity', this.state),
+      row('Heatmap', seg),
+      this.legend,
+    );
+    parent.append(this.el);
+  }
+
+  /** Reflect the current selection (and the hours of the day being shown). */
+  show(sel: Selection, slots: SlotMeta[]): void {
+    this.city.value = sel.city;
+    const c = this.cities.find((x) => x.id === sel.city)!;
+    this.month.replaceChildren(
+      ...c.months.map((m) =>
+        el('option', { value: String(m.month) }, `${MONTHS[m.month - 1]} ${m.day}`),
+      ),
+    );
+    this.month.value = String(sel.month);
+    this.slots = slots;
+    this.slot.max = String(slots.length - 1);
+    this.slot.value = String(sel.slot);
+    const s = slots[sel.slot]!;
+    this.time.textContent = `${s.label} LST`;
+    this.state.value = sel.state;
+    for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
+    this.legend.hidden = sel.layer === 'none';
+  }
+
+  get slotCount(): number {
+    return this.slots.length;
+  }
+}

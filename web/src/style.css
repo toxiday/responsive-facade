@@ -74,3 +74,203 @@ body {
   color: var(--ink);
   pointer-events: none;
 }
+
+/* The demo (app/app.ts): controls top right, clear of the S and W walls in the default view;
+   the readout bottom left. Both stack at phone width. */
+.panel,
+.readout {
+  position: fixed;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.panel {
+  top: 12px;
+  right: 12px;
+  width: 300px;
+}
+
+.panel h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.panel header p {
+  margin: 2px 0 10px;
+}
+
+.panel .row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.panel .row > :not(.row-label) {
+  min-width: 0;
+}
+
+.panel .row:first-of-type {
+  grid-template-columns: 64px 1fr auto;
+}
+
+.row-label {
+  color: var(--muted);
+}
+
+.panel select {
+  width: 100%;
+  font: inherit;
+  padding: 3px 4px;
+  border: 1px solid #cfcac3;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.time {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.time input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.time-label {
+  font-variant-numeric: tabular-nums;
+}
+
+.seg {
+  display: flex;
+  border: 1px solid #cfcac3;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.seg button {
+  flex: 1;
+  font: inherit;
+  padding: 3px 0;
+  border: 0;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-left: 1px solid #cfcac3;
+}
+
+.seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: #fff;
+}
+
+.legend {
+  margin-top: 10px;
+}
+
+.legend-title strong {
+  font-size: 13px;
+}
+
+.legend-title span {
+  color: var(--muted);
+}
+
+.legend-bar {
+  height: 10px;
+  margin-top: 4px;
+}
+
+.legend-ticks {
+  position: relative;
+  height: 16px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-ticks span {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+}
+
+.legend-ticks span:first-child {
+  transform: none;
+}
+
+.legend-ticks span:last-child {
+  transform: translateX(-100%);
+}
+
+.legend-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.readout {
+  left: 12px;
+  bottom: 12px;
+  max-width: 27rem;
+}
+
+.readout .big {
+  margin: 4px 0 2px;
+}
+
+.readout .num {
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout .small,
+.panel .small {
+  font-size: 11px;
+}
+
+.chip {
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: #fff;
+  background: #2f7d4f;
+}
+
+.chip[data-status='too dark'] {
+  background: #4b5d8c;
+}
+
+.chip[data-status='too bright'] {
+  background: #b5651d;
+}
+
+.chip[data-status='glare'] {
+  background: #b3261e;
+}
+
+.dim {
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+
+  .readout {
+    right: 12px;
+    max-width: none;
+  }
+}
