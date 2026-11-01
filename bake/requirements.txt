@@ -1,0 +1,6 @@
+# Bake dependencies other than torch (see requirements-torch.txt). Pins match Facade Designer v3.
+# Exact resolved set: requirements.lock.txt
+numpy==2.4.6
+pandas==3.0.3        # imported by v3's model_allsides_climate.py
+matplotlib==3.10.9   # v3's facade_viz.LUX_CMAP (legend colours)
+pytest==8.4.2

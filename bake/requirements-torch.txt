@@ -1,0 +1,4 @@
+# Install first (CUDA 12.8 wheel, needed for the RTX 50-series). Same version as Facade Designer v3.
+#   .venv\Scripts\python.exe -m pip install -r bake\requirements-torch.txt
+--index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128

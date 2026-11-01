@@ -1,0 +1,27 @@
+# internal notes stay local-only (Tony, 2026-11-01): the public repo is code only
+docs/
+CLAUDE.md
+
+# local tooling and environments
+.venv/
+.tools/
+.tmp/
+
+# bake scratch, Radiance runs, logs, caches
+bake/work/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# web
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+
+# editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
