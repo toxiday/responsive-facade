@@ -11,10 +11,10 @@ export function rendererOptions(): RendererOptions {
 }
 
 // Tone mapping: the highlight roll-off of Khronos PBR Neutral (three's NeutralToneMapping)
-// without its toe. Below 0.8 (linear) colours pass through unchanged, so the furniture palette
-// shows true in shade; brighter values (sun patches) compress smoothly to white. Neutral's toe
-// subtracts up to 0.04 from every channel, which crushes dark colours such as Deep Slate Olive
-// to black.
+// without its toe. Below 0.8 (linear) colours pass through unchanged, so hues hold at the
+// display exposure (sun.ts: white at 200 lux = 50% grey); brighter values (sun patches)
+// compress smoothly to white. Neutral's toe subtracts up to 0.04 from every channel, which
+// crushes dark colours such as Deep Slate Olive to black.
 const CUSTOM_HOOK = 'vec3 CustomToneMapping( vec3 color ) { return color; }';
 const ROLL_OFF = /* glsl */ `vec3 CustomToneMapping( vec3 color ) {
   const float start = 0.8;

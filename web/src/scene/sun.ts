@@ -1,6 +1,10 @@
 // Sun and sky light (guidelines §3.5). The direction is ALWAYS the baked sun vector of the slot
-// being shown; it is never recomputed here. Colour and intensity are display-only: warmer and
-// weaker at low altitude, a sky term from DHI. One shadow map fitted tightly to the room.
+// being shown; it is never recomputed here. One shadow map fitted tightly to the room.
+//
+// Display exposure (Tony, 2026-11-01): light levels are given in lux, and a white surface at
+// the ambient target, 200 lux, reads as 50% grey (sRGB 128). The sky light holds the room at
+// that ambient level. The sun is display-only: warmer at low altitude, scaled by DNI, and capped
+// well below real beam illuminance so sunlit colours keep their hue instead of washing to white.
 
 import { Color, DirectionalLight, HemisphereLight, Matrix4, Vector3 } from 'three';
 import type { Room, Vec3 } from '../data/manifest';
@@ -8,10 +12,19 @@ import { roomToThree, towardSunThree } from './frame';
 import { WALL_T } from './shell';
 
 const DISTANCE = 30;
-// three's Lambert term divides by pi, so a sky light of intensity pi shows a surface at its own
-// colour. Shaded tops therefore show the furniture palette nearly true (the sky tint is close
-// to white); sunlit patches go brighter and the tone mapper rolls them off.
-const SKY = Math.PI;
+const GREY_50 = 0.214; // sRGB 0.5 in linear light
+/** three.js light intensity per lux. Lambert divides by pi, so white at 200 lux is GREY_50. */
+export const LUX = (GREY_50 * Math.PI) / 200;
+/** Sky light: the illuminance on an upward face, held at the ambient target. */
+export const AMBIENT_LUX = 200;
+/** Display sun at normal incidence for DNI of 800 W/m² or more. */
+export const SUN_LUX = 2000;
+
+/** Display value (sRGB 0-1, before the highlight roll-off) of a matte surface under `lux`. */
+export function displayValue(lux: number, albedo = 1): number {
+  const linear = (albedo * lux * LUX) / Math.PI;
+  return linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
+}
 
 export interface SunSlot {
   sunRoom: Vec3;
@@ -21,8 +34,10 @@ export interface SunSlot {
 }
 
 export class SunLight {
-  readonly light = new DirectionalLight(0xffffff, 3);
-  readonly sky = new HemisphereLight(0xf8f9fb, 0xd6cec2, SKY);
+  readonly light = new DirectionalLight(0xffffff, SUN_LUX * LUX);
+  // White from above (so the 200 lux calibration holds on upward faces); a warm floor bounce
+  // from below, so walls and the sides of furniture sit a little darker than tops.
+  readonly sky = new HemisphereLight(0xffffff, 0xcdc5b9, AMBIENT_LUX * LUX);
   private readonly centre: Vector3;
   private readonly corners: Vector3[];
 
@@ -44,7 +59,6 @@ export class SunLight {
   set(slot: SunSlot | null): void {
     if (!slot) {
       this.light.visible = false;
-      this.sky.intensity = SKY + 0.3;
       return;
     }
     this.light.visible = true;
@@ -53,11 +67,10 @@ export class SunLight {
     this.light.target.position.copy(this.centre);
     this.light.target.updateMatrixWorld();
 
-    // Display-only colour/intensity from altitude and irradiance.
+    // Display-only colour and strength from altitude and DNI (no sun patch without beam).
     const a = Math.max(0, Math.min(1, (slot.alt - 5) / 40));
     this.light.color.copy(new Color('#ffb36b')).lerp(new Color('#fff6ea'), a);
-    this.light.intensity = 0.8 + 3.7 * Math.min(1, slot.dni / 800);
-    this.sky.intensity = SKY + 0.4 * Math.min(1, slot.dhi / 300);
+    this.light.intensity = SUN_LUX * LUX * Math.min(1, slot.dni / 800);
     this.fitShadow();
   }
 
