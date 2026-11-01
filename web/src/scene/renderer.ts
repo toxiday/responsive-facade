@@ -38,7 +38,12 @@ function installToneMapping(): void {
 
 export function createRenderer(parent: HTMLElement): WebGLRenderer {
   installToneMapping();
-  const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  // Stencil: the dark void beyond the room's openings is drawn only through them (shell.ts).
+  const renderer = new WebGLRenderer({
+    antialias: true,
+    preserveDrawingBuffer: true,
+    stencil: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(parent.clientWidth, parent.clientHeight);
   renderer.outputColorSpace = SRGBColorSpace;

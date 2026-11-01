@@ -3,6 +3,22 @@
 export type Side = 'S' | 'N' | 'E' | 'W';
 export type Vec3 = [number, number, number];
 
+/** An opening in a closed wall, from the floor 5 plan. a0..a1 runs along the wall (x on S/N,
+ * y on E/W), from the floor up to z1. */
+export interface Opening {
+  id: string;
+  wall: Side;
+  kind: 'door' | 'opening';
+  a0: number;
+  a1: number;
+  z1: number;
+  /** Along-wall position of the door's hinge (it swings into the room). */
+  hinge: number | null;
+  label: string;
+  /** How far the floor is drawn past the opening. */
+  beyond: number;
+}
+
 export interface Room {
   id: string;
   width: number;
@@ -13,6 +29,7 @@ export interface Room {
   open: boolean[];
   wall_azimuth_deg: Record<Side, number>;
   sensor_height: number;
+  openings: Opening[];
 }
 
 /** Where a person sits or stands to use a piece, which way they face, and what they do. */

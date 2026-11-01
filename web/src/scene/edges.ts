@@ -19,6 +19,7 @@ import {
   Color,
   DepthTexture,
   Float32BufferAttribute,
+  Line,
   LineBasicMaterial,
   LineLoop,
   Mesh,
@@ -46,7 +47,8 @@ export const LINE_WIDTH = 0.75;
 export function withEdges<T extends Object3D>(obj: T): T {
   obj.traverse((o) => {
     const mesh = o as Mesh;
-    if (mesh.isMesh && !(mesh.material as Material).transparent) o.layers.enable(EDGE_LAYER);
+    if (!mesh.isMesh || o.userData.noEdges || (mesh.material as Material).transparent) return;
+    o.layers.enable(EDGE_LAYER);
   });
   return obj;
 }
@@ -58,6 +60,15 @@ export function floorLoop(points: [number, number][], z: number, color = LINE_CO
   const geo = new BufferGeometry();
   geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
   return new LineLoop(geo, new LineBasicMaterial({ color }));
+}
+
+/** An open polyline on the floor, through room-frame (x, y) points at height z. */
+export function floorLine(points: [number, number][], z: number, color = LINE_COLOR): Line {
+  const pos: number[] = [];
+  for (const [x, y] of points) pos.push(x, z, -y); // roomToThree
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  return new Line(geo, new LineBasicMaterial({ color }));
 }
 
 const VERT = /* glsl */ `

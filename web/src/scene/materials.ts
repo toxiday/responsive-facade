@@ -6,6 +6,7 @@ export const PALETTE = {
   background: new Color('#f3f1ed'),
   floor: new Color('#d8d2c8'),
   poche: new Color('#6b655d'),
+  void: new Color('#3b3834'), // unmodelled space beyond the entry door and hall opening
   wall: new Color('#efede9'),
   ceiling: new Color('#efede9'),
   panel: new Color('#e9e6e1'),

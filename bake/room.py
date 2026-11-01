@@ -20,6 +20,10 @@ and the chaise; the kitchen counters and the range have standing spots in the ai
 floor is covered by a lattice of standing states, one zone per point, so the facade can follow
 the occupant as they walk.
 
+Openings in the interior walls come from the floor 5 plan (`config.PLAN_501_AI`, whose
+coordinates are 501.6's room frame): the unit's entry door in the N wall, from the building
+corridor, and a cased opening in the E wall into the hall to the bedrooms and baths.
+
 Facing angles are in the room frame, degrees counter-clockwise from +x: 0 = towards the E wall,
 90 = towards the N wall, 180 = towards the W wall, 270 = towards the S wall.
 
@@ -55,6 +59,17 @@ STOOL_TUCK = 0.05          # stool fronts this far under the counter edge
 DINING_TABLE_WIDTH = 0.95  # the survey table is 0.76 m wide
 DINING_TABLE_CY = 6.10     # its centre line, between the rug and the island
 SINK_BASIN = {"depth": 0.20, "faucet_strip": 0.08, "rim": 0.03}
+
+# Openings in the closed walls, from the floor 5 plan (checked by test_openings_match_plan).
+# `a0..a1` runs along the wall (x on S/N, y on E/W); `z1` is the head height, not in the plan.
+# `beyond` is how far the floor is drawn past the opening, to show where it leads.
+DOOR_HEAD = 2.1
+OPENINGS = (
+    {"id": "entry", "wall": "N", "kind": "door", "a0": 4.547, "a1": 5.297, "z1": DOOR_HEAD,
+     "hinge": 5.297, "label": "Entry from the corridor", "beyond": 1.2},
+    {"id": "hall", "wall": "E", "kind": "opening", "a0": 6.718, "a1": 7.848, "z1": DOOR_HEAD,
+     "hinge": None, "label": "Hall to the bedrooms", "beyond": 1.5},
+)
 
 
 @dataclass
@@ -341,7 +356,19 @@ def furniture() -> list[Item]:
     b = (desk[2] - DINING_TUCK, dy - w / 2, desk[2] - DINING_TUCK + d, dy + w / 2)
     out.append(Item("desk_chair", "chair", "Desk chair (added)", b, 0, chair_h, 180.0, "desk",
                     added=True, seats=[_seat_at(b, 180.0, "desk")]))
+
+    # The entry door, drawn open into the room against the E wall, as in the plan.
+    door = next(o for o in OPENINGS if o["id"] == "entry")
+    leaf = door["a1"] - door["a0"]
+    d = config.ROOM_D
+    out.append(Item("entry_door", "door", "Entry door", (door["hinge"] - 0.04, d - leaf,
+                                                           door["hinge"], d),
+                    0, door["z1"], 180.0))
     return out
+
+
+def openings() -> list[dict]:
+    return [dict(o) for o in OPENINGS]
 
 
 # ---------------------------------------------------------------------------

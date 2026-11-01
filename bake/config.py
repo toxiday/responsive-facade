@@ -51,6 +51,7 @@ UNIT_JSON = BMV2 / "Units" / "501" / "output" / "unit.json"
 JOB_501_6 = BMV2 / "Units" / "501" / "output" / "501.6.json"
 OPT_501_6_CSV = BMV2 / "Units" / "501" / "output" / "501.6" / "facade_wide.csv"
 BASELINE_CSV = BMV2 / "Units" / "conventional L05" / "501.6" / "facade_wide.csv"
+PLAN_501_AI = BMV2 / "Floor Plans" / "501.ai"   # floor 5 plan: walls, doors (legacy AI)
 
 RENDERS_SCRIPTS = Path(r"C:\Computation Project\renders\unit 501 views scripts")
 FURN_JSON = RENDERS_SCRIPTS / "unit501_furniture.json"

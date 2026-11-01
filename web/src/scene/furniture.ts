@@ -211,6 +211,9 @@ const BUILDERS: Record<string, Builder> = {
   cabinet(g, { dx, dz, h }) {
     box(g, MAT.base, dx, h, dz);
   },
+  door(g, { dx, dz, h }) {
+    box(g, MAT.base, dx, h, dz);
+  },
   sink(g, c) {
     // A steel basin lining the island's cutout, a drain, and the faucet on the far side.
     const { dx, h, p } = c;

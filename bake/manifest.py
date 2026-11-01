@@ -65,6 +65,7 @@ def build() -> dict:
             "wall_azimuth_deg": v3.opt.wall_azimuths(config.NORTH_ANGLE),
             "sensor_height": 0.6, "site_city": "houston",
             "rhino_origin_mm": config.rhino_origin_mm(), "rhino_rot_deg": config.RHINO_ROT_DEG,
+            "openings": room.openings(),
         },
         "conventions": {
             "walls": "S = y0, N = y=D, E = x=W, W = x0 (room-local)",
