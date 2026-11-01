@@ -59,10 +59,16 @@ function bakeShots() {
     'cooking_range',
     'desk',
     'baseline',
-  ].map((s) => [`bake-1130-${s}`, q(s, '11:30')]);
+  ];
   return [
     ...day,
-    ...states,
+    ...states.map((s) => [`bake-1130-${s}`, q(s, '11:30')]),
+    // The room lit by each state's Radiance lux, no heatmap; and two against the old uniform sky.
+    ...states.map((s) => [`bake-lit-1130-${s}`, q(s, '11:30', '&layer=none')]),
+    ...['couch_tv', 'cooking_range'].map((s) => [
+      `bake-nofill-1130-${s}`,
+      q(s, '11:30', '&layer=none&fill=0'),
+    ]),
     ['bake-1130-lounge_read_w-surrogate', q('lounge_read_w', '11:30', '&layer=surrogate')],
     ['bake-1130-desk-top', q('desk', '11:30', '&view=top')],
     ['bake-outside-1130-couch_relax', q('couch_relax', '11:30', '&layer=none&cam=sw&cut=0')],

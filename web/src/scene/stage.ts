@@ -10,6 +10,7 @@ import { Cutaway } from './cutaway';
 import { EdgePass, withEdges } from './edges';
 import { buildFurniture } from './furniture';
 import { Heatmap } from './heatmap';
+import { DaylightFill } from './indirect';
 import { PALETTE } from './materials';
 import { createRenderer, rendererOptions } from './renderer';
 import { createShell, type Shell } from './shell';
@@ -25,6 +26,8 @@ export class Stage {
   readonly furniture: Group;
   readonly sun: SunLight;
   readonly heatmap: Heatmap;
+  /** Off until a view sets baked lux (indirect.ts). */
+  readonly fill: DaylightFill;
   readonly cutaway: Cutaway;
   readonly edges = new EdgePass();
   readonly compass: Compass;
@@ -47,6 +50,7 @@ export class Stage {
     this.furniture = furniture.group;
     this.sun = new SunLight(room, rendererOptions().shadowSize);
     this.heatmap = new Heatmap(room, manifest.legend);
+    this.fill = new DaylightFill(room);
     this.scene.add(
       this.shell.group,
       this.facade.group,
@@ -59,6 +63,7 @@ export class Stage {
     this.compass = new Compass(host.parentElement ?? document.body, room.north_angle);
 
     // Linework on the shell, the furniture and the opaque facade panels.
+    this.fill.apply(this.scene);
     withEdges(this.shell.group);
     withEdges(this.furniture);
     for (const w of this.facade.walls.values()) withEdges(w.solid);
