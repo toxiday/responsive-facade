@@ -54,6 +54,19 @@ function appShots() {
     ['app-couch_tv-1630', q('couch_tv', '16:30')],
     ['app-baseline-radiance', q('baseline', '11:30', '&layer=radiance')],
     ['app-flip-mid', q('couch_relax', '10:30'), () => window.__rf.app.previewAt({ slot: 3 }, 450)],
+    // The curtain: TV (mostly closed) to cooking (mostly open) raises; back again drops.
+    ...[0, 250, 500, 750].flatMap((ms) => [
+      [
+        `app-curtain-raise-${ms}`,
+        q('couch_tv', '11:30'),
+        `window.__rf.app.previewAt({ state: 'cooking_range' }, ${ms})`,
+      ],
+      [
+        `app-curtain-drop-${ms}`,
+        q('cooking_range', '11:30'),
+        `window.__rf.app.previewAt({ state: 'couch_tv' }, ${ms})`,
+      ],
+    ]),
   ];
 }
 

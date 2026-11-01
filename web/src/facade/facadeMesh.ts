@@ -11,11 +11,13 @@
 // Hidden instances are scaled to zero. Each wall also has a dashed magenta outline of its window openings (the presentation
 // accent), which the cutaway shows while the wall itself is hidden.
 //
-// animateTo changes design with only the changed panels moving (guidelines §3.4): each pivots
-// on its vertical axis, a panel that opens turning edge-on and going, one that closes coming in
-// edge-on and turning flat. The turns sweep along each wall with a little fixed jitter and are
-// all done within FLIP_MS + SWEEP_MS + JITTER_MS. Glass and the shadow switch halfway through
-// each turn.
+// animateTo changes design with only the changed panels moving (guidelines §3.4), like a
+// curtain (Tony, 2026-11-01). One edge sweeps the wall in CURTAIN_MS, eased: upward through
+// the panels that open (a raise: each shrinks up into the panel above it) and downward through
+// the panels that close (a drop: each hangs down from its top edge). A panel moves only while
+// the edge crosses its row, so a run of changed panels moves as one sheet with one edge, not as
+// slats. The shadow panels move with them, so the sun patches grow and shrink under the
+// curtain; the glass is there for the whole of each move.
 
 import {
   BoxGeometry,
@@ -75,41 +77,39 @@ interface WallMeshes {
 
 const ZERO = new Matrix4().makeScale(0, 0, 0);
 
-const FLIP_MS = 350;
-const SWEEP_MS = 400;
-const JITTER_MS = 200;
+const CURTAIN_MS = 900;
 
-/** One panel turning between wall and window (animateTo). */
+/** One panel moving between wall and window (animateTo). */
 interface Flip {
   w: WallMeshes;
   i: number;
   toWindow: boolean;
-  start: number;
+  /** When the edge reaches it, in rows: from the bottom for a raise, from the top for a drop. */
+  order: number;
 }
 
-/** Deterministic 0–1 jitter per panel, so a given change always plays the same way. */
-function jitter(n: number): number {
-  const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
-  return s - Math.floor(s);
-}
-
-const UP = new Vector3(0, 1, 0);
 const _p = new Vector3();
 const _q = new Quaternion();
 const _s = new Vector3();
 const _m = new Matrix4();
 
-/** A panel transform turned by `angle` about its own vertical axis. */
-function turned(panel: Matrix4, angle: number): Matrix4 {
+/** A panel transform cut to `f` of its height, hanging from its top edge (three +y is up). */
+function hung(panel: Matrix4, f: number): Matrix4 {
+  if (f <= 0) return ZERO;
   panel.decompose(_p, _q, _s);
-  return _m.compose(_p, _q.setFromAxisAngle(UP, angle), _s);
+  _p.y += (_s.y * (1 - f)) / 2;
+  _s.y *= f;
+  return _m.compose(_p, _q, _s);
 }
+
+const ease = (t: number) => t * t * (3 - 2 * t);
 
 export class FacadeMesh {
   readonly group = new Group();
   readonly walls = new Map<Side, WallMeshes>();
   private bits: Uint8Array = new Uint8Array(4 * PANELS_PER_WALL);
   private flips: Flip[] = [];
+  private flipStart = 0;
   // Screen-space width, so it needs the viewport size (setLineResolution).
   private readonly outline = new LineMaterial({
     color: PALETTE.accent,
@@ -252,38 +252,39 @@ export class FacadeMesh {
     this.applyAll();
   }
 
-  /** Change to a design with the changed panels turning (see the header); `now` in ms. */
+  /** Change to a design with the changed panels moving (see the header); `now` in ms. */
   animateTo(bits: ArrayLike<number>, now: number): void {
     if (this.flips.length) this.applyAll(); // a change still running jumps to its end
     const next = Uint8Array.from(bits, (v) => (v ? 1 : 0));
     const flips: Flip[] = [];
     for (const [side, w] of this.walls)
       for (let i = 0; i < PANELS_PER_WALL; i++) {
-        const col = i % COLS;
-        const b = bitIndex(side, Math.floor(i / COLS), col);
+        const row = Math.floor(i / COLS);
+        const b = bitIndex(side, row, i % COLS);
         if (next[b] === this.bits[b]) continue;
-        const delay = (col / (COLS - 1)) * SWEEP_MS + jitter(b) * JITTER_MS;
-        flips.push({ w, i, toWindow: next[b] === 1, start: now + delay });
+        const toWindow = next[b] === 1;
+        // Row 0 is at the ceiling: a raise starts at the bottom, a drop at the top.
+        flips.push({ w, i, toWindow, order: toWindow ? ROWS - 1 - row : row });
       }
     this.bits = next;
     for (const w of this.walls.values()) this.updateGhost(w);
     this.flips = flips;
+    this.flipStart = now;
   }
 
-  /** Advance the turning panels to `now` (ms); true while the facade still needs frames. */
+  /** Advance the moving panels to `now` (ms); true while the facade still needs frames. */
   tick(now: number): boolean {
     if (!this.flips.length) return false;
-    let running = false;
+    const t = Math.min(1, Math.max(0, (now - this.flipStart) / CURTAIN_MS));
+    const running = t < 1;
+    const edge = ROWS * ease(t); // rows the edge has crossed
     for (const f of this.flips) {
-      const p = (now - f.start) / FLIP_MS;
-      if (p < 1) running = true;
-      if (p < 0) continue; // not started: still showing the old state
+      const p = Math.min(1, Math.max(0, edge - f.order)); // how far it has crossed this one
       const [panel, pane, shade] = f.w.layers[f.i]!;
-      const angle = (f.toWindow ? p : 1 - p) * (Math.PI / 2);
-      const half = p >= 0.5;
-      f.w.solid.setMatrixAt(f.i, f.toWindow && p >= 1 ? ZERO : turned(panel, angle));
-      f.w.glass.setMatrixAt(f.i, f.toWindow === half ? pane : ZERO);
-      f.w.shadow.setMatrixAt(f.i, f.toWindow === half ? ZERO : shade);
+      const cover = f.toWindow ? 1 - p : p; // how much of the panel hangs down
+      f.w.solid.setMatrixAt(f.i, hung(panel, cover));
+      f.w.shadow.setMatrixAt(f.i, hung(shade, cover));
+      f.w.glass.setMatrixAt(f.i, f.toWindow || p < 1 ? pane : ZERO);
     }
     for (const w of this.walls.values())
       for (const mesh of [w.solid, w.glass, w.shadow]) mesh.instanceMatrix.needsUpdate = true;

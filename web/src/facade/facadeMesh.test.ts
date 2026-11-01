@@ -15,14 +15,16 @@ function matrixAt(f: FacadeMesh, i: number): Matrix4 {
   return m;
 }
 const isZero = (m: Matrix4) => m.elements.every((v, i) => (i === 15 ? v === 1 : v === 0));
-const turn = (m: Matrix4) => {
-  const q = new Quaternion();
-  m.decompose(new Vector3(), q, new Vector3());
-  return 2 * Math.acos(Math.min(1, Math.abs(q.w)));
+/** Height and top edge (three +y) of a panel transform. */
+const extent = (m: Matrix4) => {
+  const p = new Vector3();
+  const s = new Vector3();
+  m.decompose(p, new Quaternion(), s);
+  return { h: s.y, top: p.y + s.y / 2 };
 };
 
 describe('FacadeMesh.animateTo', () => {
-  it('turns only the changed panels and ends exactly at the new design', () => {
+  it('moves only the changed panels, like a curtain, and ends exactly at the new design', () => {
     const f = new FacadeMesh(manifest.room);
     const closed = new Uint8Array(4 * PANELS_PER_WALL);
     f.setBits(closed);
@@ -31,16 +33,21 @@ describe('FacadeMesh.animateTo', () => {
     const changed = 5 * 32 + 3;
     const untouched = 6 * 32 + 3;
     const before = matrixAt(f, untouched).clone();
+    const full = extent(matrixAt(f, changed));
 
     f.animateTo(open, 0);
-    let turned = false;
+    let partway = false;
     for (let t = 0; t <= 1000; t += 10) {
       f.tick(t);
-      const a = turn(matrixAt(f, changed));
-      if (a > 0.1 && a < Math.PI / 2 - 0.1) turned = true;
+      const m = matrixAt(f, changed);
+      if (!isZero(m)) {
+        const e = extent(m);
+        expect(e.top).toBeCloseTo(full.top, 6); // it rises into its top edge
+        if (e.h > 0.1 * full.h && e.h < 0.9 * full.h) partway = true;
+      }
       expect(matrixAt(f, untouched).equals(before)).toBe(true);
     }
-    expect(turned).toBe(true);
+    expect(partway).toBe(true);
     expect(f.tick(2000)).toBe(false); // finished on an earlier tick
     expect(isZero(matrixAt(f, changed))).toBe(true);
 
@@ -49,6 +56,55 @@ describe('FacadeMesh.animateTo', () => {
     for (let i = 0; i < PANELS_PER_WALL; i++)
       expect(matrixAt(f, i).equals(matrixAt(direct, i))).toBe(true);
     expect(Array.from(f.getBits())).toEqual(Array.from(open));
+  });
+
+  it('raises from the bottom row up and drops from the top row down', () => {
+    const f = new FacadeMesh(manifest.room);
+    const closed = new Uint8Array(4 * PANELS_PER_WALL);
+    const open = closed.slice();
+    for (const row of [2, 9]) open[bitIndex('S', row, 4)] = 1;
+    const [upper, lower] = [2 * 32 + 4, 9 * 32 + 4];
+    const h = (i: number) => (isZero(matrixAt(f, i)) ? 0 : extent(matrixAt(f, i)).h);
+
+    f.setBits(closed);
+    const full = h(upper);
+    f.animateTo(open, 0);
+    let t = 0;
+    while (h(lower) > full * 0.99) f.tick((t += 5)); // the lower one starts rising first...
+    expect(h(upper)).toBeCloseTo(full, 6); // ...while the upper one has not moved
+    f.tick(5000);
+    f.tick(5001);
+
+    f.animateTo(closed, 0);
+    t = 0;
+    while (h(upper) === 0) f.tick((t += 5)); // closing, the upper one drops first
+    expect(h(lower)).toBe(0);
+  });
+
+  it('moves a column as one curtain: at most one panel partway at a time', () => {
+    const f = new FacadeMesh(manifest.room);
+    const closed = new Uint8Array(4 * PANELS_PER_WALL);
+    const open = closed.slice();
+    for (let row = 0; row < 16; row++) open[bitIndex('W', row, 7)] = 1;
+    const wall = f.walls.get('W')!.solid;
+    f.setBits(closed);
+    const full = (() => {
+      const m = new Matrix4();
+      wall.getMatrixAt(7, m);
+      return extent(m).h;
+    })();
+    f.animateTo(open, 0);
+    for (let t = 0; t <= 900; t += 15) {
+      f.tick(t);
+      let partway = 0;
+      for (let row = 0; row < 16; row++) {
+        const m = new Matrix4();
+        wall.getMatrixAt(row * 32 + 7, m);
+        const hh = isZero(m) ? 0 : extent(m).h;
+        if (hh > 1e-6 && hh < full - 1e-6) partway++;
+      }
+      expect(partway).toBeLessThanOrEqual(1);
+    }
   });
 
   it('a new change finishes the running one first', () => {
