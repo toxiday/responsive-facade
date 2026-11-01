@@ -16,11 +16,12 @@ export const PALETTE = {
   kick: new Color('#a19b92'), // recessed plinths under base cabinets
   // Furniture colour scheme (Tony, 2026-11-01). Specified in CMYK; converted to sRGB through
   // U.S. Web Coated (SWOP) v2, relative colorimetric with black point compensation. Then, at
-  // Tony's ask, Sulphur Yellow darkened to Cinnamon's lightness (L* 77) and Cinnamon's chroma cut
-  // by a quarter, both in CIELAB so the hues hold. SWOP equivalents in brackets.
+  // Tony's ask, Sulphur Yellow darkened to Cinnamon's lightness (L* 77), Cinnamon's chroma cut
+  // by a quarter and Deep Slate Olive lightened to L* 40, all in CIELAB so the hues hold. SWOP
+  // equivalents in brackets.
   olive: new Color('#837e31'), // C48 M38 Y100 K15: sofa, armchairs
   cinnamon: new Color('#e4b790'), // Pinkish Cinnamon (~C9 M30 Y45 K0): tables, chairs, stools
-  slate: new Color('#253122'), // Deep Slate Olive C76 M60 Y80 K62: TV, range, fridge
+  slate: new Color('#556251'), // Deep Slate Olive (~C64 M46 Y67 K28): TV, range, fridge
   sulphur: new Color('#c8c097'), // Sulphur Yellow (~C22 M20 Y46 K0): counter tops, dining
   //                                table, rug, media console
   dark: new Color('#3b3a39'),
