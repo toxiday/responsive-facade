@@ -3,8 +3,7 @@
 // The facade, the sun and the heatmap all come from the packed month file. The magenta
 // outline is the state's zone cells (the owner grid the optimizer scored), the dot the
 // occupant. `state=baseline` is the conventional L05 facade at the same hour.
-// The room is lit by the record's Radiance lux without its direct sun (scene/indirect.ts);
-// `fill=0` goes back to the uniform 200 lux sky light for comparison.
+// The room is lit by the record's Radiance lux without its direct sun (scene/indirect.ts).
 
 import { CircleGeometry, Mesh, MeshBasicMaterial } from 'three';
 import type { Manifest, OccupantState } from '../data/manifest';
@@ -25,7 +24,7 @@ export interface BakeView {
   slots: SlotMeta[];
   day: number;
   layer: string;
-  fill: 'radiance' | 'surrogate' | null;
+  fill: 'radiance' | 'surrogate';
   ship: string;
   flips: number | null;
   metrics: RecordMetrics;
@@ -54,18 +53,14 @@ export async function runBake(
   const bits = data.facade(s, k);
   stage.facade.setBits(bits);
   stage.setSun({ sunRoom: slot.sun_room, alt: slot.alt, dni: slot.dni, dhi: slot.dhi });
-  let fill: BakeView['fill'] = null;
-  if (params.get('fill') !== '0') {
-    const rad = data.lux(s, k, 'radiance');
-    const lux = rad ?? data.lux(s, k, 'surrogate')!;
-    // No beam to remove when DNI is negligible (the display sun is off then too).
-    const lit =
-      slot.dni >= 20
-        ? litMask(bits, slot.sun_room, room.width, room.depth, room.height, room.sensor_height)
-        : null;
-    stage.fill.set(indirectLux(lux, lit));
-    fill = rad ? 'radiance' : 'surrogate';
-  }
+  const rad = data.lux(s, k, 'radiance');
+  // No beam to remove when DNI is negligible (the display sun is off then too).
+  const lit =
+    slot.dni >= 20
+      ? litMask(bits, slot.sun_room, room.width, room.depth, room.height, room.sensor_height)
+      : null;
+  stage.fill.set(indirectLux(rad ?? data.lux(s, k, 'surrogate')!, lit));
+  const fill: BakeView['fill'] = rad ? 'radiance' : 'surrogate';
   if (layer === 'radiance' || layer === 'surrogate') {
     const lux = data.lux(s, k, layer);
     if (lux) {

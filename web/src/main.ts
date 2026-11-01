@@ -105,7 +105,7 @@ async function main(): Promise<void> {
       `Zone in band: <strong>${m.in_band_rad?.[0] ?? '–'}%</strong> Radiance ` +
         `(surrogate ${m.in_band_sur[0]}%), ${m.above_rad?.[0] ?? '–'}% above band; ` +
         `${m.glare_rad ?? '–'} floor cells over 3000 lux.`,
-      `<span class="dim">Lighting: ${v.fill ? `${v.fill} lux without the direct sun` : 'uniform 200 lux sky'}` +
+      `<span class="dim">Lighting: ${v.fill} lux without the direct sun` +
         ` plus the display sun. Heatmap: ${v.layer} lux on the 0.6 m work plane, 0–3000 ramp; ` +
         `white line 300 lux, dark line 3000 lux.</span>`,
       ['radiance', 'surrogate', 'none'].map((l) => link({ layer: l }, l)).join(' · ') +
