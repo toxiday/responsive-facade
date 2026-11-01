@@ -16,6 +16,7 @@ import {
   BufferGeometry,
   Color,
   DynamicDrawUsage,
+  FrontSide,
   Float32BufferAttribute,
   Group,
   InstancedMesh,
@@ -105,7 +106,9 @@ export class FacadeMesh {
     solid.instanceMatrix.setUsage(DynamicDrawUsage);
     const shadow = new InstancedMesh(
       box,
-      new MeshStandardMaterial({ colorWrite: false, depthWrite: false }),
+      // Cast from the sun-facing faces: by default three casts from back faces, which for
+      // this thin plane sit flush with the wall corners and leak a sliver of sun there.
+      new MeshStandardMaterial({ colorWrite: false, depthWrite: false, shadowSide: FrontSide }),
       PANELS_PER_WALL,
     );
     shadow.name = `facade-${side}-shadow`;
@@ -157,7 +160,7 @@ export class FacadeMesh {
         layers.push([
           slab(0, WALL_T, OVERLAP),
           slab((WALL_T - GLASS_T) / 2, GLASS_T, 0),
-          slab(0, PANEL_T, 0),
+          slab(0, PANEL_T, OVERLAP), // overlapped too: a crack would leak sun
         ]);
       }
     for (let i = 0; i < PANELS_PER_WALL; i++) solid.setColorAt(i, PALETTE.panel);

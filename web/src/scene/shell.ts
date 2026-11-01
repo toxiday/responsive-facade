@@ -9,6 +9,7 @@
 
 import {
   BoxGeometry,
+  FrontSide,
   Group,
   type Material,
   Mesh,
@@ -66,7 +67,29 @@ const MARK_Z = 0.002;
 const POCHE = new MeshBasicMaterial({ color: PALETTE.poche });
 /** Unlit dark card in an opening. A material per card: the cutaway hides by material. */
 const voidMaterial = () => new MeshBasicMaterial({ color: PALETTE.void });
-const PLUG = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+// Shadow-only: invisible, casting from its sun-facing faces (see facadeMesh.ts).
+const PLUG = new MeshBasicMaterial({
+  colorWrite: false,
+  depthWrite: false,
+  shadowSide: FrontSide,
+});
+
+/**
+ * Materials for a wall piece: its two corner ends, the faces the cut facades would meet, are
+ * flat poché like the floor bands; the rest is wall. Door jambs stay wall: they are surfaces,
+ * not cuts. BoxGeometry face order is +x, -x, +y, -y, +z, -z; S/N walls run along three x,
+ * E/W walls along three -z (room y), so their a0 end is the +z face.
+ */
+function wallMaterials(side: Side, p: WallPiece, length: number): Material[] {
+  const wall = solid(PALETTE.wall);
+  const mats: Material[] = Array.from({ length: 6 }, () => wall);
+  // One material per wall, not shared: the cutaway hides a wall by its materials.
+  const poche = new MeshBasicMaterial({ color: PALETTE.poche });
+  const alongX = side === 'S' || side === 'N';
+  if (p.a0 === 0) mats[alongX ? 1 : 4] = poche;
+  if (p.a1 === length) mats[alongX ? 0 : 5] = poche;
+  return mats;
+}
 const PLUG_T = 0.03;
 
 /** A darker floor band over a room-frame rect, outlined. */
@@ -99,7 +122,7 @@ export function roomBox(
   x1: number,
   y1: number,
   z1: number,
-  material: Material = solid(PALETTE.wall),
+  material: Material | Material[] = solid(PALETTE.wall),
 ): Mesh {
   const mesh = new Mesh(new BoxGeometry(x1 - x0, z1 - z0, y1 - y0), material);
   roomToThree((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, mesh.position);
@@ -144,7 +167,7 @@ export function createShell(room: Room): Shell {
         group.add(mark);
       }
       if (room.open[i]) continue; // made of facade panels
-      const wall = roomBox(x0, y0, p.z0, x1, y1, p.z1, solid(PALETTE.wall));
+      const wall = roomBox(x0, y0, p.z0, x1, y1, p.z1, wallMaterials(side, p, length));
       wall.name = `wall-${side}`;
       walls[side].push(wall);
       group.add(wall);
