@@ -32,7 +32,11 @@ export function maskOutline(room: Room, mask: ArrayLike<number>, z: number, colo
     }
   const geo = new BufferGeometry();
   geo.setAttribute('position', new Float32BufferAttribute(pts, 3));
-  const lines = new LineSegments(geo, new LineBasicMaterial({ color, depthTest: false }));
+  // Transparent, so it draws after (over) the heatmap: renderOrder only sorts within a pass.
+  const lines = new LineSegments(
+    geo,
+    new LineBasicMaterial({ color, depthTest: false, transparent: true }),
+  );
   lines.renderOrder = 10;
   return lines;
 }
@@ -66,7 +70,11 @@ export function wallRects(
   }
   const geo = new BufferGeometry();
   geo.setAttribute('position', new Float32BufferAttribute(pts, 3));
-  const lines = new LineSegments(geo, new LineBasicMaterial({ color, depthTest: false }));
+  // Transparent, so it draws after (over) the heatmap: renderOrder only sorts within a pass.
+  const lines = new LineSegments(
+    geo,
+    new LineBasicMaterial({ color, depthTest: false, transparent: true }),
+  );
   lines.renderOrder = 10;
   return lines;
 }

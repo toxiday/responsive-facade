@@ -14,11 +14,14 @@ window.__rf = { ready: false };
 const VIEWS: [string, string][] = [
   ['Room', '?'],
   ['Spots', '?debug=spots&cam=top'],
+  ['Bake', '?debug=bake'],
   ['Pattern', '?debug=pattern'],
   ['M1 · A', '?debug=m1&case=A'],
   ['M1 · B', '?debug=m1&case=B'],
   ['Rhino', '?debug=rhino'],
 ];
+
+const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
 
 function hud(lines: string[]): void {
   const el = document.getElementById('hud')!;
@@ -75,6 +78,38 @@ async function main(): Promise<void> {
     hud([
       `Magenta: seats and kitchen spots (tick = facing); circles: the ${activity} activity zones.`,
       `Blue: ${standing} standing positions on the open floor (one state each).`,
+    ]);
+  } else if (debug === 'bake') {
+    const { runBake } = await import('./debug/bake');
+    const v = await runBake(manifest, host, params);
+    document.getElementById('hud')!.classList.add('bottom'); // clear of the S and W walls
+    stage = v.stage;
+    const m = v.metrics;
+    const city = manifest.cities.find((c) => c.id === (params.get('city') ?? 'houston'));
+    const month = MONTHS[Number(params.get('month') ?? 12) - 1];
+    const label = v.stateId === 'baseline' ? 'Baseline: conventional L05 facade' : v.state?.label;
+    const facade =
+      v.ship === 'baseline'
+        ? 'Fixed facade, judged against the 200 lux ambient brief.'
+        : `Facade: ${v.ship === 'warm' ? 'warm start from the previous hour' : 'cold solve'}` +
+          (v.flips === null ? '' : `, ${v.flips} panels changed since the previous hour`) +
+          '.';
+    const link = (q: Record<string, string>, text: string) => {
+      const u = new URLSearchParams(params);
+      for (const [key, val] of Object.entries(q)) u.set(key, val);
+      return `<a href="?${u}">${text}</a>`;
+    };
+    hud([
+      `<strong>${label}</strong> · ${city?.label ?? ''}, ${month} ${v.day}, ${v.slot.label} LST`,
+      `Sun ${v.slot.alt.toFixed(1)}° up, ${v.slot.sky} sky (DNI ${v.slot.dni}, DHI ${v.slot.dhi} W/m²). ${facade}`,
+      `Zone in band: <strong>${m.in_band_rad?.[0] ?? '–'}%</strong> Radiance ` +
+        `(surrogate ${m.in_band_sur[0]}%), ${m.above_rad?.[0] ?? '–'}% above band; ` +
+        `${m.glare_rad ?? '–'} floor cells over 3000 lux.`,
+      `<span class="dim">Heatmap: ${v.layer} lux on the 0.6 m work plane, 0–3000 ramp; ` +
+        `white line 300 lux, dark line 3000 lux.</span>`,
+      ['radiance', 'surrogate', 'none'].map((l) => link({ layer: l }, l)).join(' · ') +
+        ' | ' +
+        v.slots.map((x) => link({ slot: x.label }, x.label)).join(' '),
     ]);
   } else if (debug === 'rhino') {
     const { runRhino } = await import('./debug/rhino');

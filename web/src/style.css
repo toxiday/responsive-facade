@@ -45,6 +45,12 @@ body {
   pointer-events: auto;
 }
 
+.hud.bottom {
+  max-width: 27rem; /* clear of the room in the top view */
+  top: auto;
+  bottom: 12px;
+}
+
 .hud nav {
   margin: 4px 0;
 }

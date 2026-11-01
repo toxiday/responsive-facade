@@ -37,7 +37,38 @@ const SHOTS = [
   ['m1-B-shadow', '?debug=m1&case=B&layer=shadow'],
   ['m1-B-shadow-top', '?debug=m1&case=B&layer=shadow&view=top'],
   ['m1-B-radiance-top', '?debug=m1&case=B&layer=radiance&view=top'],
+  ...bakeShots(),
 ].filter(([name]) => !args.only || name.startsWith(args.only));
+
+// Bake review (`--only bake`): one state through the day, every activity at the clearest
+// hour with the Radiance heatmap, surrogate against Radiance, and the facade from outside.
+function bakeShots() {
+  const q = (state, slot, extra = '') =>
+    `?debug=bake&city=houston&month=12&state=${state}&slot=${slot}${extra}`;
+  const hhmm = (slot) => slot.replace(':', '');
+  const day = ['08:30', '10:30', '12:30', '14:30', '16:30'].map((t) => [
+    `bake-day-couch_relax-${hhmm(t)}`,
+    q('couch_relax', t, '&layer=none'),
+  ]);
+  const states = [
+    'ambient',
+    'couch_relax',
+    'couch_tv',
+    'lounge_read_w',
+    'dining',
+    'cooking_range',
+    'desk',
+    'baseline',
+  ].map((s) => [`bake-1130-${s}`, q(s, '11:30')]);
+  return [
+    ...day,
+    ...states,
+    ['bake-1130-lounge_read_w-surrogate', q('lounge_read_w', '11:30', '&layer=surrogate')],
+    ['bake-1130-desk-top', q('desk', '11:30', '&view=top')],
+    ['bake-outside-1130-couch_relax', q('couch_relax', '11:30', '&layer=none&cam=sw&cut=0')],
+    ['bake-outside-1130-baseline', q('baseline', '11:30', '&layer=none&cam=sw&cut=0')],
+  ];
+}
 
 mkdirSync(out, { recursive: true });
 const server = await createServer({ root, logLevel: 'error', server: { port: 5199 } });
