@@ -12,6 +12,7 @@ export const PALETTE = {
   mullion: new Color('#8f8a84'),
   furniture: new Color('#cfc9c0'),
   fabric: new Color('#b9b2a8'),
+  rug: new Color('#e9e3d8'),
   wood: new Color('#c4ad8e'),
   dark: new Color('#3b3a39'),
   steel: new Color('#b7b9ba'),

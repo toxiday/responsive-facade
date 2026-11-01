@@ -15,6 +15,8 @@ const iouMin = JSON.parse(readFileSync(join(root, 'src/__fixtures__/m1.json'), '
 
 const SHOTS = [
   ['room', '?'],
+  ['room-sw', '?cam=sw'],
+  ['room-top', '?cam=top'],
   ['pattern-inside-SW-walls', '?debug=pattern'],
   ['pattern-inside-NE-walls', '?debug=pattern&cam=sw'],
   ['pattern-outside-NE-walls', '?debug=pattern&cam=ne&cut=0'],
@@ -40,6 +42,18 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('console', (m) => m.type() === 'error' && console.error(`[page] ${m.text()}`));
 page.on('pageerror', (e) => console.error(`[page] ${e.message}`));
 
+// Google Drive sync briefly locks files it is uploading; retry the write instead of failing.
+async function writeRetry(path, data) {
+  for (let i = 0; ; i++) {
+    try {
+      return writeFileSync(path, data);
+    } catch (e) {
+      if (i >= 5) throw e;
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
+  }
+}
+
 const results = {};
 let failed = false;
 try {
@@ -55,7 +69,7 @@ try {
     const rf = await page.evaluate(() => window.__rf);
     if (rf.error) throw new Error(`${name}: ${rf.error}`);
     await page.waitForTimeout(400);
-    await page.screenshot({ path: join(out, `${name}.png`) });
+    await writeRetry(join(out, `${name}.png`), await page.screenshot());
     if (rf.m1) {
       const { case: id, iou_render, lit_render, lit_radiance } = rf.m1;
       results[name] = { case: id, iou_render, lit_render, lit_radiance };
@@ -67,5 +81,5 @@ try {
   await browser.close();
   await server.close();
 }
-writeFileSync(join(out, 'render_check.json'), JSON.stringify(results, null, 2) + '\n');
+await writeRetry(join(out, 'render_check.json'), JSON.stringify(results, null, 2) + '\n');
 process.exit(failed ? 1 : 0);

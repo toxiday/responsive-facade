@@ -25,7 +25,11 @@ export interface FurnitureItem {
   facing: number | null;
   click: string | null;
   added: boolean;
+  /** Shape parameters for the builder (bake/room.py), e.g. the sofa's chaise. */
+  params: Record<string, number | string> | null;
   obstacle: boolean;
+  /** Floor rects [x0, y0, x1, y1]: the bbox, or the parts of an L-shaped piece. */
+  footprint: [number, number, number, number][];
 }
 
 export interface Zone {
