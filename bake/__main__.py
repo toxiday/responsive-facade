@@ -111,6 +111,60 @@ def cmd_fixtures(_args) -> int:
     return 0
 
 
+def cmd_bench(args) -> int:
+    from . import bench
+    bench.run(procs=tuple(int(n) for n in args.procs.split(",")))
+    return 0
+
+
+def _scope(args):
+    cities = args.city.split(",")
+    months = [int(m) for m in args.months.split(",")]
+    return cities, months
+
+
+def cmd_solve(args) -> int:
+    from . import solve
+    cities, months = _scope(args)
+    solve.run(cities, months, procs=args.procs, force=args.force)
+    return 0
+
+
+def cmd_baseline(args) -> int:
+    from . import solve
+    cities, months = _scope(args)
+    print(f"baseline: {solve.run_baseline(cities, months, force=args.force)} month(s) written")
+    return 0
+
+
+def cmd_verify(args) -> int:
+    from . import verify
+    cities, months = _scope(args)
+    r = verify.run(cities, months, workers=args.workers)
+    print(f"verify: {r['runs']} run(s) in {r['minutes']:.1f} min, {len(r['failed'])} failed")
+    return 1 if r["failed"] else 0
+
+
+def cmd_pack(args) -> int:
+    from . import pack
+    pack.run(*_scope(args))
+    return 0
+
+
+def cmd_report(args) -> int:
+    from . import report
+    print(report.write(*_scope(args)))
+    return 0
+
+
+def cmd_m2(args) -> int:
+    """Houston December end to end: solve, baseline, verify, pack, report."""
+    for step in (cmd_solve, cmd_baseline, cmd_verify, cmd_pack, cmd_report):
+        if step(args):
+            return 1
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m bake")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -120,9 +174,23 @@ def main(argv=None) -> int:
     p.add_argument("--force", action="store_true", help="re-run Radiance")
     sub.add_parser("manifest", help="write web/public/data/manifest.json")
     sub.add_parser("fixtures", help="write the TypeScript test fixtures")
+    p = sub.add_parser("bench", help="measure solve, concurrency and Radiance costs")
+    p.add_argument("--procs", default="1,2,3,4", help="solver process counts to try")
+    for name, help_ in (("solve", "facade solve chains"), ("baseline", "baseline facade lux"),
+                        ("verify", "Radiance verification"), ("pack", "write the site data"),
+                        ("report", "write bake_report.md"),
+                        ("m2", "solve, baseline, verify, pack and report")):
+        q = sub.add_parser(name, help=help_)
+        q.add_argument("--city", default="houston")
+        q.add_argument("--months", default="12")
+        q.add_argument("--procs", type=int, default=3, help="solver processes")
+        q.add_argument("--workers", type=int, default=20, help="Radiance workers")
+        q.add_argument("--force", action="store_true", help="redo finished work")
     args = ap.parse_args(argv)
     cmds = {"smoke": cmd_smoke, "slots": cmd_slots, "m1": cmd_m1,
-            "manifest": cmd_manifest, "fixtures": cmd_fixtures}
+            "manifest": cmd_manifest, "fixtures": cmd_fixtures, "bench": cmd_bench,
+            "solve": cmd_solve, "baseline": cmd_baseline, "verify": cmd_verify,
+            "pack": cmd_pack, "report": cmd_report, "m2": cmd_m2}
     return cmds[args.cmd](args)
 
 

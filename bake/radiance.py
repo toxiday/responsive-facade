@@ -73,3 +73,13 @@ def run_batch(tasks: list[dict], gen_py: str, tmp_root: str, workers: int) -> li
     with ctx.Pool(min(workers, len(tasks)), initializer=init_worker,
                   initargs=(gen_py, tmp_root)) as pool:
         return list(pool.imap_unordered(simulate, tasks))
+
+
+def run_iter(tasks: list[dict], gen_py: str, tmp_root: str, workers: int):
+    """Like run_batch, but yields each result as it finishes, so callers can cache as they go."""
+    if not tasks:
+        return
+    ctx = mp.get_context("spawn")
+    with ctx.Pool(max(1, min(workers, len(tasks))), initializer=init_worker,
+                  initargs=(gen_py, tmp_root)) as pool:
+        yield from pool.imap_unordered(simulate, tasks)
