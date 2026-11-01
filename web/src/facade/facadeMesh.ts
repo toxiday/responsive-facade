@@ -3,7 +3,8 @@
 // (they cast shadows) and one of glass panels (they do not: in Radiance the glass transmits
 // direct sun, a binary shadow map can only pass it or block it). Panels are full size so no
 // light leaks between them; a line grid draws the panel joints. Hidden instances are scaled
-// to zero.
+// to zero. Each wall also has a dashed outline of its window openings, which the cutaway shows
+// while the wall itself is hidden.
 
 import {
   BoxGeometry,
@@ -14,6 +15,7 @@ import {
   Group,
   InstancedMesh,
   LineBasicMaterial,
+  LineDashedMaterial,
   LineSegments,
   Matrix4,
   MeshStandardMaterial,
@@ -33,6 +35,7 @@ import {
   bitIndex,
   panelBox,
   wallSpan,
+  windowOutline,
 } from './geometry';
 
 export const PANEL_T = 0.03;
@@ -43,6 +46,8 @@ interface WallMeshes {
   group: Group;
   solid: InstancedMesh;
   glass: InstancedMesh;
+  /** Dashed outline of the window openings, for when the wall is cut away. */
+  ghost: LineSegments;
   centres: Vector3[];
   sizes: Vector3[];
 }
@@ -122,8 +127,14 @@ export class FacadeMesh {
     const group = new Group();
     group.name = `facade-${side}`;
     group.add(solid, glass, this.jointLines(side, outward));
-    this.group.add(group);
-    return { side, group, solid, glass, centres, sizes };
+    const ghost = new LineSegments(
+      new BufferGeometry(),
+      new LineDashedMaterial({ color: PALETTE.windowLine, dashSize: 0.07, gapSize: 0.05 }),
+    );
+    ghost.name = `facade-${side}-windows`;
+    ghost.visible = false;
+    this.group.add(group, ghost);
+    return { side, group, solid, glass, ghost, centres, sizes };
   }
 
   /** Panel joints on both faces of the wall (display only, no shadow). */
@@ -175,7 +186,19 @@ export class FacadeMesh {
       w.glass.instanceMatrix.needsUpdate = true;
       w.solid.computeBoundingSphere();
       w.glass.computeBoundingSphere();
+      this.updateGhost(w);
     }
+  }
+
+  private updateGhost(w: WallMeshes): void {
+    const { width: W, depth: D, height: H } = this.room;
+    const room = windowOutline(this.bits, w.side, W, D, H);
+    const pos: number[] = [];
+    for (let i = 0; i < room.length; i += 3) pos.push(room[i]!, room[i + 2]!, -room[i + 1]!);
+    w.ghost.geometry.dispose();
+    w.ghost.geometry = new BufferGeometry();
+    w.ghost.geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    w.ghost.computeLineDistances();
   }
 
   getBits(): Uint8Array {
@@ -188,6 +211,13 @@ export class FacadeMesh {
     if (!w) return;
     w.solid.setColorAt(row * COLS + col, color);
     if (w.solid.instanceColor) w.solid.instanceColor.needsUpdate = true;
+  }
+
+  /** Per-side window outlines, shown by the cutaway while their wall is hidden. */
+  ghosts(): Record<Side, Object3D[]> {
+    const out: Record<Side, Object3D[]> = { S: [], N: [], E: [], W: [] };
+    for (const [side, w] of this.walls) out[side].push(w.ghost);
+    return out;
   }
 
   /** Per-side objects for the cutaway. */

@@ -74,6 +74,59 @@ export function allPanels(width: number, depth: number, height: number): PanelBo
   return out;
 }
 
+/**
+ * Outline of the window openings on one wall: the boundary between window and wall panels (and
+ * the wall's edge where a window reaches it), merged into straight runs. Returns segment
+ * endpoints in room coordinates, flat: [x0, y0, z0, x1, y1, z1, ...].
+ */
+export function windowOutline(
+  bits: ArrayLike<number>,
+  side: Side,
+  width: number,
+  depth: number,
+  height: number,
+): number[] {
+  const span = wallSpan(side, width, depth);
+  const cw = span / COLS;
+  const ch = height / ROWS;
+  const open = (row: number, col: number) =>
+    row >= 0 && row < ROWS && col >= 0 && col < COLS && bits[bitIndex(side, row, col)] === 1;
+  const fixed = side === 'S' ? 0 : side === 'N' ? depth : side === 'E' ? width : 0;
+  const at = (a: number, z: number): Vec3 =>
+    side === 'S' || side === 'N' ? [a, fixed, z] : [fixed, a, z];
+  const out: number[] = [];
+  const push = (a0: number, z0: number, a1: number, z1: number) =>
+    out.push(...at(a0, z0), ...at(a1, z1));
+
+  // Horizontal runs, on the line above row r (r = ROWS is the bottom edge).
+  for (let r = 0; r <= ROWS; r++) {
+    const z = height - r * ch;
+    let start = -1;
+    for (let c = 0; c <= COLS; c++) {
+      const edge = c < COLS && open(r - 1, c) !== open(r, c);
+      if (edge && start < 0) start = c;
+      if (!edge && start >= 0) {
+        push(start * cw, z, c * cw, z);
+        start = -1;
+      }
+    }
+  }
+  // Vertical runs, on the line left of column c (c = COLS is the far end).
+  for (let c = 0; c <= COLS; c++) {
+    const a = c * cw;
+    let start = -1;
+    for (let r = 0; r <= ROWS; r++) {
+      const edge = r < ROWS && open(r, c - 1) !== open(r, c);
+      if (edge && start < 0) start = r;
+      if (!edge && start >= 0) {
+        push(a, height - start * ch, a, height - r * ch);
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
 /** (row, col) of the panel containing wall point (a = along-wall coordinate, z). */
 export function panelAt(
   side: Side,

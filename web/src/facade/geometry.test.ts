@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import conventions from '../__fixtures__/conventions.json';
 import type { Side } from '../data/manifest';
-import { allPanels, bitIndex, panelAt, panelBox } from './geometry';
+import { allPanels, bitIndex, COLS, panelAt, panelBox, ROWS, windowOutline } from './geometry';
 
 describe('facade panels match v3 facade_panel_boxes', () => {
   for (const room of conventions.rooms) {
@@ -47,5 +47,40 @@ describe('facade panels match v3 facade_panel_boxes', () => {
     expect(bitIndex('S', 0, 0)).toBe(0);
     expect(bitIndex('N', 0, 0)).toBe(512);
     expect(bitIndex('W', 15, 31)).toBe(2047);
+  });
+});
+
+describe('windowOutline', () => {
+  const [W, D, H] = [5.372487, 10.498, 3.0];
+  const segments = (pts: number[]) => {
+    const out: [number, number, number, number, number, number][] = [];
+    for (let i = 0; i < pts.length; i += 6) out.push(pts.slice(i, i + 6) as never);
+    return out;
+  };
+  const length = (pts: number[]) =>
+    segments(pts).reduce((s, [a, b, c, d, e, f]) => s + Math.hypot(d - a, e - b, f - c), 0);
+
+  it('is empty without windows', () => {
+    expect(windowOutline(new Uint8Array(2048), 'S', W, D, H)).toEqual([]);
+  });
+
+  it('outlines a block of windows with four merged edges in the wall plane', () => {
+    const bits = new Uint8Array(2048);
+    for (let row = 5; row < 7; row++)
+      for (let col = 10; col < 13; col++) bits[bitIndex('S', row, col)] = 1;
+    const pts = windowOutline(bits, 'S', W, D, H);
+    expect(segments(pts)).toHaveLength(4);
+    const [cw, ch] = [W / COLS, H / ROWS];
+    expect(length(pts)).toBeCloseTo(2 * (3 * cw + 2 * ch), 6);
+    for (let i = 1; i < pts.length; i += 3) expect(pts[i]).toBe(0); // S wall: y = 0
+  });
+
+  it('runs along y on the E and W walls and reaches the wall edge', () => {
+    const bits = new Uint8Array(2048);
+    for (let row = 0; row < ROWS; row++) bits[bitIndex('W', row, 0)] = 1; // full-height strip
+    const pts = windowOutline(bits, 'W', W, D, H);
+    expect(segments(pts)).toHaveLength(4);
+    for (let i = 0; i < pts.length; i += 3) expect(pts[i]).toBe(0); // W wall: x = 0
+    expect(Math.max(...pts.filter((_, i) => i % 3 === 2))).toBeCloseTo(H, 9);
   });
 });

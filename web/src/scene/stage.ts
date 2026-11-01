@@ -69,13 +69,22 @@ export class Stage {
       parts,
       [this.shell.ceiling],
       this.shell.corners.map((c) => ({ obj: c.mesh, sides: c.sides })),
-      { sides: this.shell.marks, corners: this.shell.cornerMarks },
+      { sides: this.marks(), corners: this.shell.cornerMarks },
     );
 
     this.rig.controls.addEventListener('change', () => this.invalidate());
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
     this.loop();
+  }
+
+  /** What the cutaway shows while a wall is hidden: its floor band and its window outline. */
+  private marks(): Record<Side, Object3D[]> {
+    const ghosts = this.facade.ghosts();
+    const out: Record<Side, Object3D[]> = { S: [], N: [], E: [], W: [] };
+    for (const side of this.manifest.room.sides)
+      out[side].push(...this.shell.marks[side], ...ghosts[side]);
+    return out;
   }
 
   setSun(slot: SunSlot | null): void {
