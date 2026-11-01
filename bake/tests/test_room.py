@@ -268,3 +268,18 @@ def test_every_activity_state_paints_cells(states):
         tgt, owner = room.target_and_owner(st)
         assert (owner >= 0).sum() > 20, st.id
         assert tgt.shape == (1, 32, 32)
+
+
+def test_base_cabinets_have_recessed_toe_kicks(items):
+    by_id = {i.id: i for i in items}
+    for k in ("island", "counter_0", "counter_1"):
+        p = by_id[k].params
+        body, plinth, fronts = p["body"], p["plinth"], p["fronts"]
+        assert p["plinth_h"] == room.PLINTH_H
+        # the body's face is the fronts' face; the plinth is set back behind it
+        i = 1 if fronts["axis"] == "y" else 0
+        face = body[i + 2] if fronts["out"] > 0 else body[i]
+        kick = plinth[i + 2] if fronts["out"] > 0 else plinth[i]
+        assert face == pytest.approx(fronts["plane"], abs=1e-3), k
+        assert abs(face - kick) > 0.04, k
+        assert all(c[2] >= room.PLINTH_H for c in fronts["cells"]), k

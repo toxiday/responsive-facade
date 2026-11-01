@@ -31,6 +31,7 @@ const MAT = {
   cinnamon: solid(PALETTE.cinnamon, 0.8),
   sulphur: solid(PALETTE.sulphur, 0.7),
   slate: solid(PALETTE.slate, 0.5),
+  kick: solid(PALETTE.kick),
   dark: solid(PALETTE.dark, 0.5),
   steel: solid(PALETTE.steel, 0.4),
   added: solid(PALETTE.added),
@@ -126,6 +127,15 @@ interface Ctx {
 }
 
 type Builder = (g: Group, c: Ctx) => void;
+
+/** A base cabinet's recessed plinth, from the bake; returns the height the body starts at. */
+function toeKick(g: Group, c: Ctx): number {
+  const plinth = rect(c.p, 'plinth');
+  const ph = num(c.p, 'plinth_h', 0);
+  if (!plinth || ph <= 0) return 0;
+  slab(g, MAT.kick, c.localRect(plinth), null, 0, ph);
+  return ph;
+}
 
 const num = (p: Params, key: string, fallback: number): number => {
   const v = p[key];
@@ -228,21 +238,30 @@ const BUILDERS: Record<string, Builder> = {
   },
   island(g, c) {
     // The top overhangs the base at the front (the stool side) so the stools tuck under it.
-    // The sink basin is cut through the top and the top of the base.
+    // The base stands on a recessed toe kick; the sink basin is cut through the top and the
+    // top of the base.
     const { dx, dz, h, p } = c;
     const over = num(p, 'overhang', 0.04);
     const cut = rect(p, 'cutout');
     const hole = cut ? c.localRect(cut) : null;
     const t = 0.04;
-    const base: Rect = [-dx / 2 + 0.02, -dz / 2 + 0.02, dx / 2 - over, dz / 2 - 0.02];
+    const fallback: Rect = [-dx / 2 + 0.02, -dz / 2 + 0.02, dx / 2 - over, dz / 2 - 0.02];
+    const z0 = toeKick(g, c);
+    const base = rect(p, 'body') ? c.localRect(rect(p, 'body')!) : fallback;
     const yHole = hole ? h - num(p, 'cutout_depth', 0.2) : h - t;
-    slab(g, MAT.base, base, null, 0, yHole);
+    slab(g, MAT.base, base, null, z0, yHole);
     if (hole) slab(g, MAT.base, base, hole, yHole, h - t);
     slab(g, MAT.sulphur, [-dx / 2, -dz / 2, dx / 2, dz / 2], hole, h - t, h);
   },
-  counter(g, { dx, dz, h }) {
-    box(g, MAT.base, dx, h - 0.04, dz);
-    box(g, MAT.sulphur, dx, 0.04, dz, 0, h - 0.02);
+  counter(g, c) {
+    // Base cabinet: recessed toe kick, body (carcass and fronts), and the counter top.
+    const { dx, dz, h, p } = c;
+    const t = 0.04;
+    const z0 = toeKick(g, c);
+    const body = rect(p, 'body');
+    const full: Rect = [-dx / 2, -dz / 2, dx / 2, dz / 2];
+    slab(g, MAT.base, body ? c.localRect(body) : full, null, z0, h - t);
+    slab(g, MAT.sulphur, full, null, h - t, h);
   },
   range(g, { dx, dz, h }) {
     box(g, MAT.slate, dx, h - 0.03, dz);

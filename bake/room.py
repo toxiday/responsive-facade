@@ -262,12 +262,14 @@ def _fronts(es, bbox, z_range, floor):
         return None
     thin_y = near[0]["vmax"] - near[0]["vmin"] < FRONT_T
     if thin_y:
-        lo, hi, centre, a_key = y0, y1, (y0 + y1) / 2, ("umin", "umax")
+        centre, a_key = (y0 + y1) / 2, ("umin", "umax")
         side = (near[0]["vmin"] + near[0]["vmax"]) / 2
     else:
-        lo, hi, centre, a_key = x0, x1, (x0 + x1) / 2, ("vmin", "vmax")
+        centre, a_key = (x0 + x1) / 2, ("vmin", "vmax")
         side = (near[0]["umin"] + near[0]["umax"]) / 2
     out = 1 if side > centre else -1
+    k = ("vmin", "vmax") if thin_y else ("umin", "umax")
+    plane = max(e[k[1]] for e in near) if out > 0 else min(e[k[0]] for e in near)
     columns: dict = {}
     for e in near:
         columns.setdefault((round(e[a_key[0]], 3), round(e[a_key[1]], 3)), []).append(e["ztop"])
@@ -282,8 +284,29 @@ def _fronts(es, bbox, z_range, floor):
         for top in sorted(columns[spans[i]]):
             cells.append([round(a0, 4), round(a1, 4), round(bottom, 4), round(top, 4)])
             bottom = top
-    return {"axis": "y" if thin_y else "x", "plane": round(hi if out > 0 else lo, 4),
-            "out": out, "cells": cells}
+    return {"axis": "y" if thin_y else "x", "plane": round(plane, 4), "out": out,
+            "cells": cells}
+
+
+def _near(es, bbox, z_range, pad=0.03):
+    """Casework pieces inside a footprint (padded) whose tops fall in z_range."""
+    x0, y0, x1, y1 = bbox
+    return [e for e in es if e["name"] == "casework"
+            and e["umin"] > x0 - pad and e["umax"] < x1 + pad
+            and e["vmin"] > y0 - pad and e["vmax"] < y1 + pad
+            and z_range[0] < e["ztop"] <= z_range[1] + 1e-3]
+
+
+def _base_parts(es, bbox, top_z):
+    """A base cabinet's body (carcass and fronts) and its recessed plinth (toe kick), as
+    room-frame footprints, for the builder: {"body": rect, "plinth": rect, "plinth_h": h}."""
+    pieces = _near(es, bbox, (0, top_z - 0.005))
+    plinth = [e for e in pieces if e["ztop"] <= PLINTH_H + 0.005]
+    body = [e for e in pieces if e["ztop"] > PLINTH_H + 0.005]
+    if not plinth or not body:
+        return {}
+    r = lambda b: [round(v, 4) for v in b]
+    return {"body": r(_union(body)), "plinth": r(_union(plinth)), "plinth_h": PLINTH_H}
 
 
 def _seat_at(b, facing, activity):
@@ -355,7 +378,8 @@ def furniture() -> list[Item]:
                     270.0, "cooking_range",
                     params={"overhang": round(overhang, 3), "cutout": basin,
                             "cutout_depth": SINK_BASIN["depth"],
-                            "fronts": _fronts(es, ib, (0, top["ztop"]), PLINTH_H)}))
+                            "fronts": _fronts(es, ib, (0, top["ztop"]), PLINTH_H),
+                            **_base_parts(es, ib, top["ztop"])}))
     out.append(Item("sink", "sink", "Sink", _bbox(sink), 0, sink["ztop"], 270.0, "cooking_range",
                     params={"basin": basin, "depth": SINK_BASIN["depth"],
                             "counter": top["ztop"]}))
@@ -379,7 +403,8 @@ def furniture() -> list[Item]:
         x = (b["umin"] + b["umax"]) / 2
         out.append(Item(f"counter_{i}", "counter", "Counter", _bbox(b), 0, b["ztop"], 270.0,
                         kitchen[i], seats=[_seat(x, aisle_y, 90.0, kitchen[i])],
-                        params={"fronts": _fronts(es, _bbox(b), (0, b["ztop"]), PLINTH_H)}))
+                        params={"fronts": _fronts(es, _bbox(b), (0, b["ztop"]), PLINTH_H),
+                                **_base_parts(es, _bbox(b), b["ztop"])}))
     x = (rng["umin"] + rng["umax"]) / 2
     out.append(Item("range", "range", "Range", _bbox(rng), 0, rng["ztop"], 270.0,
                     "cooking_range", seats=[_seat(x, aisle_y, 90.0, "cooking_range")]))
@@ -388,6 +413,7 @@ def furniture() -> list[Item]:
                     "cooking_e"))
     tall = _group(es, lambda e: e["umin"] > 3.4 and e["vmin"] >= 9.8 and e["vmax"] > 10.3
                   and e["ztop"] >= 2.99, "fridge cabinet")
+    tall += _near(es, _union(tall), (fridge["ztop"], 3.0))     # its fronts
     out.append(Item("fridge_cabinet", "cabinet", "Cabinet", _union(tall), fridge["ztop"], 3.0,
                     270.0, wall="N",
                     params={"fronts": _fronts(es, _union(tall), (fridge["ztop"], 3.0),
@@ -397,6 +423,7 @@ def furniture() -> list[Item]:
     hood = _group(es, lambda e: e["vmin"] >= 10.07 and e["vmax"] > 10.4
                   and 1.6 < e["ztop"] < 1.8, "hood")
     up_z0 = max(e["ztop"] for e in hood)
+    uppers += [e for e in _near(es, _union(uppers), (up_z0, 3.0)) if e not in uppers]
     out.append(Item("wall_cabinets", "cabinet", "Wall cabinets", _union(uppers), up_z0, 3.0,
                     270.0, wall="N",
                     params={"fronts": _fronts(es, _union(uppers), (up_z0, 3.0), up_z0)}))

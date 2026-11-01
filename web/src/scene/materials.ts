@@ -13,6 +13,7 @@ export const PALETTE = {
   glass: new Color('#9cc3dc'),
   mullion: new Color('#8f8a84'),
   furniture: new Color('#cfc9c0'),
+  kick: new Color('#a19b92'), // recessed plinths under base cabinets
   // Furniture colour scheme (Tony, 2026-11-01). Specified in CMYK; converted to sRGB through
   // U.S. Web Coated (SWOP) v2, relative colorimetric with black point compensation. Then, at
   // Tony's ask, Sulphur Yellow darkened to Cinnamon's lightness (L* 77) and Cinnamon's chroma cut
