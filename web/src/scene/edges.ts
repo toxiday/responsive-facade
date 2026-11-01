@@ -47,7 +47,7 @@ export const LINE_WIDTH = 0.75;
 export function withEdges<T extends Object3D>(obj: T): T {
   obj.traverse((o) => {
     const mesh = o as Mesh;
-    if (!mesh.isMesh || o.userData.noEdges || (mesh.material as Material).transparent) return;
+    if (!mesh.isMesh || (mesh.material as Material).transparent) return;
     o.layers.enable(EDGE_LAYER);
   });
   return obj;

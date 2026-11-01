@@ -62,13 +62,12 @@ SINK_BASIN = {"depth": 0.20, "faucet_strip": 0.08, "rim": 0.03}
 
 # Openings in the closed walls, from the floor 5 plan (checked by test_openings_match_plan).
 # `a0..a1` runs along the wall (x on S/N, y on E/W); `z1` is the head height, not in the plan.
-# `beyond` is how far the floor is drawn past the opening, to show where it leads.
 DOOR_HEAD = 2.1
 OPENINGS = (
     {"id": "entry", "wall": "N", "kind": "door", "a0": 4.547, "a1": 5.297, "z1": DOOR_HEAD,
-     "hinge": 5.297, "label": "Entry from the corridor", "beyond": 1.2},
+     "hinge": 5.297, "label": "Entry from the corridor"},
     {"id": "hall", "wall": "E", "kind": "opening", "a0": 6.718, "a1": 7.848, "z1": DOOR_HEAD,
-     "hinge": None, "label": "Hall to the bedrooms", "beyond": 1.5},
+     "hinge": None, "label": "Hall to the bedrooms"},
 )
 
 

@@ -15,8 +15,6 @@ export interface Opening {
   /** Along-wall position of the door's hinge (it swings into the room). */
   hinge: number | null;
   label: string;
-  /** How far the floor is drawn past the opening. */
-  beyond: number;
 }
 
 export interface Room {
