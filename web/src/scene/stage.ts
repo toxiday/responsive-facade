@@ -107,6 +107,7 @@ export class Stage {
     this.renderer.setSize(w, h);
     const buf = this.renderer.getDrawingBufferSize(new Vector2());
     this.edges.setSize(buf.x, buf.y, this.renderer.getPixelRatio());
+    this.facade.setLineResolution(w, h);
     this.rig.resize(w, h);
     this.invalidate();
   }

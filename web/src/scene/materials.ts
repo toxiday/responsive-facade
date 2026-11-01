@@ -10,7 +10,6 @@ export const PALETTE = {
   ceiling: new Color('#efede9'),
   panel: new Color('#e9e6e1'),
   glass: new Color('#9cc3dc'),
-  windowLine: new Color('#a8e0ff'), // dashed outline of windows in a cut-away wall
   mullion: new Color('#8f8a84'),
   furniture: new Color('#cfc9c0'),
   // Furniture colour scheme (Tony, 2026-11-01). Specified in CMYK; converted to sRGB through
@@ -25,7 +24,7 @@ export const PALETTE = {
   dark: new Color('#3b3a39'),
   steel: new Color('#b7b9ba'),
   added: new Color('#b9cfc6'),
-  accent: new Color('#ec008c'),
+  accent: new Color('#ec008c'), // presentation magenta: window outlines, debug overlays
 };
 
 export function solid(color: Color, roughness = 0.9): MeshStandardMaterial {

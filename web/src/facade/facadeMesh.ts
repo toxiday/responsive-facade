@@ -3,8 +3,8 @@
 // (they cast shadows) and one of glass panels (they do not: in Radiance the glass transmits
 // direct sun, a binary shadow map can only pass it or block it). Panels are full size so no
 // light leaks between them; a line grid draws the panel joints. Hidden instances are scaled
-// to zero. Each wall also has a dashed outline of its window openings, which the cutaway shows
-// while the wall itself is hidden.
+// to zero. Each wall also has a magenta outline of its window openings (the presentation
+// accent), which the cutaway shows while the wall itself is hidden.
 
 import {
   BoxGeometry,
@@ -15,7 +15,6 @@ import {
   Group,
   InstancedMesh,
   LineBasicMaterial,
-  LineDashedMaterial,
   LineSegments,
   Matrix4,
   MeshStandardMaterial,
@@ -23,6 +22,9 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import type { Room, Side } from '../data/manifest';
 import { roomToThree } from '../scene/frame';
 import { PALETTE } from '../scene/materials';
@@ -40,14 +42,16 @@ import {
 
 export const PANEL_T = 0.03;
 const OVERLAP = 0.001;
+/** Window outline width in CSS pixels: twice the black linework (scene/edges.ts). */
+const OUTLINE_WIDTH = 1.5;
 
 interface WallMeshes {
   side: Side;
   group: Group;
   solid: InstancedMesh;
   glass: InstancedMesh;
-  /** Dashed outline of the window openings, for when the wall is cut away. */
-  ghost: LineSegments;
+  /** Outline of the window openings, for when the wall is cut away. */
+  ghost: LineSegments2;
   centres: Vector3[];
   sizes: Vector3[];
 }
@@ -58,6 +62,8 @@ export class FacadeMesh {
   readonly group = new Group();
   readonly walls = new Map<Side, WallMeshes>();
   private bits: Uint8Array = new Uint8Array(4 * PANELS_PER_WALL);
+  // Screen-space width, so it needs the viewport size (setLineResolution).
+  private readonly outline = new LineMaterial({ color: PALETTE.accent, linewidth: OUTLINE_WIDTH });
 
   constructor(
     private readonly room: Room,
@@ -127,12 +133,10 @@ export class FacadeMesh {
     const group = new Group();
     group.name = `facade-${side}`;
     group.add(solid, glass, this.jointLines(side, outward));
-    const ghost = new LineSegments(
-      new BufferGeometry(),
-      new LineDashedMaterial({ color: PALETTE.windowLine, dashSize: 0.07, gapSize: 0.05 }),
-    );
+    const ghost = new LineSegments2(new LineSegmentsGeometry(), this.outline);
     ghost.name = `facade-${side}-windows`;
     ghost.visible = false;
+    ghost.frustumCulled = false;
     this.group.add(group, ghost);
     return { side, group, solid, glass, ghost, centres, sizes };
   }
@@ -195,10 +199,17 @@ export class FacadeMesh {
     const room = windowOutline(this.bits, w.side, W, D, H);
     const pos: number[] = [];
     for (let i = 0; i < room.length; i += 3) pos.push(room[i]!, room[i + 2]!, -room[i + 1]!);
+    // A fresh geometry each time: setPositions on the old one would leave its buffers behind.
+    const geo = new LineSegmentsGeometry();
+    if (pos.length) geo.setPositions(pos);
+    geo.instanceCount = pos.length / 6;
     w.ghost.geometry.dispose();
-    w.ghost.geometry = new BufferGeometry();
-    w.ghost.geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
-    w.ghost.computeLineDistances();
+    w.ghost.geometry = geo;
+  }
+
+  /** Viewport size in CSS pixels, for the outline's screen-space width. */
+  setLineResolution(width: number, height: number): void {
+    this.outline.resolution.set(width, height);
   }
 
   getBits(): Uint8Array {
