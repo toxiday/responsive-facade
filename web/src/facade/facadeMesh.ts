@@ -3,7 +3,7 @@
 // (they cast shadows) and one of glass panels (they do not: in Radiance the glass transmits
 // direct sun, a binary shadow map can only pass it or block it). Panels are full size so no
 // light leaks between them; a line grid draws the panel joints. Hidden instances are scaled
-// to zero. Each wall also has a magenta outline of its window openings (the presentation
+// to zero. Each wall also has a dashed magenta outline of its window openings (the presentation
 // accent), which the cutaway shows while the wall itself is hidden.
 
 import {
@@ -63,7 +63,13 @@ export class FacadeMesh {
   readonly walls = new Map<Side, WallMeshes>();
   private bits: Uint8Array = new Uint8Array(4 * PANELS_PER_WALL);
   // Screen-space width, so it needs the viewport size (setLineResolution).
-  private readonly outline = new LineMaterial({ color: PALETTE.accent, linewidth: OUTLINE_WIDTH });
+  private readonly outline = new LineMaterial({
+    color: PALETTE.accent,
+    linewidth: OUTLINE_WIDTH,
+    dashed: true,
+    dashSize: 0.07, // metres, along the line
+    gapSize: 0.05,
+  });
 
   constructor(
     private readonly room: Room,
@@ -205,6 +211,7 @@ export class FacadeMesh {
     geo.instanceCount = pos.length / 6;
     w.ghost.geometry.dispose();
     w.ghost.geometry = geo;
+    if (pos.length) w.ghost.computeLineDistances(); // for the dashes
   }
 
   /** Viewport size in CSS pixels, for the outline's screen-space width. */
