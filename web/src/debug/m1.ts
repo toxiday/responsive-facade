@@ -48,9 +48,10 @@ export async function runM1(manifest: Manifest, host: HTMLElement, params: URLSe
   const outline = maskOutline(room, c.mask_radiance, z + 0.004);
   stage.scene.add(outline);
 
+  // Mid-grey, so the sun patch stays visible under the near-full-colour sky light.
   const receiver = new Mesh(
     new PlaneGeometry(room.width, room.depth),
-    new MeshLambertMaterial({ color: 0xffffff }),
+    new MeshLambertMaterial({ color: 0x8c8c8c }),
   );
   receiver.rotation.x = -Math.PI / 2;
   roomToThree(room.width / 2, room.depth / 2, z, receiver.position);
@@ -98,8 +99,10 @@ function measure(
   cam.layers.enable(MEASURE_LAYER); // layer 0 too: shadow casters must be visible to it
   cam.updateProjectionMatrix();
 
-  const saved = [stage.heatmap.mesh.visible, ...hide.map((o) => o.visible)];
+  // Direct sun only: the sky light is display lighting and would only lift the unlit cells.
+  const saved = [stage.heatmap.mesh.visible, stage.sun.sky.visible, ...hide.map((o) => o.visible)];
   stage.heatmap.mesh.visible = false;
+  stage.sun.sky.visible = false;
   for (const o of hide) o.visible = false;
   const rt = new WebGLRenderTarget(w, h);
   const r = stage.renderer;
@@ -110,7 +113,8 @@ function measure(
   r.setRenderTarget(null);
   rt.dispose();
   stage.heatmap.mesh.visible = saved[0]!;
-  hide.forEach((o, i) => (o.visible = saved[i + 1]!));
+  stage.sun.sky.visible = saved[1]!;
+  hide.forEach((o, i) => (o.visible = saved[i + 2]!));
   stage.invalidate();
 
   const lum: number[] = [];

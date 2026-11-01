@@ -1,6 +1,7 @@
-// ?debug=spots — every place the occupant can be, for review: seats (magenta, with a tick
-// for the facing), the standing lattice on the open floor (blue), and the activity zones
-// (1 m circles). All of it comes from the manifest; nothing is computed here.
+// ?debug=spots — every place the occupant can be, for review: seats and the standing spots at
+// the kitchen counters (magenta, with a tick for the facing), the standing lattice on the open
+// floor (blue), and the activity zones (1 m circles). All of it comes from the manifest;
+// nothing is computed here.
 
 import {
   BufferGeometry,
@@ -55,23 +56,12 @@ export function runSpots(manifest: Manifest, host: HTMLElement): Stage {
   g.name = 'spots';
 
   const ticks: number[] = [];
-  for (const item of manifest.furniture) {
-    if (!item.seat) continue;
-    const [x, y, f] = item.seat;
-    g.add(dot(x, y, MARK_Z, 0.07, SEAT));
-    const a = (f * Math.PI) / 180;
-    ticks.push(x, MARK_Z, -y, x + 0.25 * Math.cos(a), MARK_Z, -(y + 0.25 * Math.sin(a)));
-  }
-  for (const act of manifest.activities) {
-    const [x, y] = act.spot;
-    const seated = manifest.furniture.some(
-      (i) => i.seat && Math.hypot(i.seat[0] - x, i.seat[1] - y) < 0.01,
-    );
-    if (seated) continue; // standing activity spots only (the cooking aisle)
-    g.add(dot(x, y, MARK_Z, 0.07, SEAT));
-    const a = (act.facing * Math.PI) / 180;
-    ticks.push(x, MARK_Z, -y, x + 0.25 * Math.cos(a), MARK_Z, -(y + 0.25 * Math.sin(a)));
-  }
+  for (const item of manifest.furniture)
+    for (const { x, y, facing } of item.seats) {
+      g.add(dot(x, y, MARK_Z, 0.07, SEAT));
+      const a = (facing * Math.PI) / 180;
+      ticks.push(x, MARK_Z, -y, x + 0.25 * Math.cos(a), MARK_Z, -(y + 0.25 * Math.sin(a)));
+    }
   const tickGeo = new BufferGeometry();
   tickGeo.setAttribute('position', new Float32BufferAttribute(ticks, 3));
   g.add(overlay(new LineSegments(tickGeo, new LineBasicMaterial({ color: SEAT }))));

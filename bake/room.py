@@ -14,9 +14,11 @@ Some survey positions are restyled for the demo (Tony, 2026-11-01, in docs/decis
 - the counter stools are pulled out from under the island overhang;
 - the desk chair is the same chair as the dining chairs.
 
-Every spot is occupiable (Tony, 2026-11-01): each seat has a `seat` the occupant sits at, and
-the open floor is covered by a lattice of standing states, one zone per lattice point, so the
-facade can follow the occupant as they walk.
+Every spot is occupiable (Tony, 2026-11-01). Each piece someone uses has `seats`: where they
+sit or stand, which way they face, and which activity that is (the sofa has two, the main seat
+and the chaise; the kitchen counters and the range have standing spots in the aisle). The open
+floor is covered by a lattice of standing states, one zone per point, so the facade can follow
+the occupant as they walk.
 
 Facing angles are in the room frame, degrees counter-clockwise from +x: 0 = towards the E wall,
 90 = towards the N wall, 180 = towards the W wall, 270 = towards the S wall.
@@ -67,7 +69,7 @@ class Item:
     click: str | None = None                      # activity id, or "tv"
     added: bool = False
     params: dict | None = None                    # shape parameters for the web builder
-    seat: tuple[float, float, float] | None = None   # x, y, facing of a person using it
+    seats: list = field(default_factory=list)     # where people use it; see _seat()
     wall: str | None = None                       # wall it hangs on; hidden with that wall
     obstacle: bool = field(init=False)
     footprint: list = field(init=False)           # floor rects; the bbox unless L-shaped
@@ -75,8 +77,7 @@ class Item:
     def __post_init__(self):
         self.bbox = tuple(round(v, 4) for v in self.bbox)
         self.z0, self.z1 = round(self.z0, 4), round(self.z1, 4)
-        if self.seat is not None:
-            self.seat = tuple(round(v, 3) for v in self.seat)
+        self.seats = [{**st, "x": round(st["x"], 3), "y": round(st["y"], 3)} for st in self.seats]
         self.obstacle = self.z1 > OBSTACLE_MIN_Z and self.z0 < OBSTACLE_MAX_Z0
         self.footprint = [list(r) for r in _footprint(self)]
 
@@ -129,6 +130,22 @@ def sofa_seat(item):
     lx = -dx / 2 + (p["back"] + p["depth"]) / 2
     lz = -side * (p["chaise_width"] - p["arm"]) / 2
     return tuple(round(v, 3) for v in _to_room(item, lx, lz))
+
+
+def chaise_seat(item):
+    """Someone on the chaise: back against the sofa back, between its arm and its inner edge,
+    legs along the chaise."""
+    p = item.params
+    dx, dz = _local_size(item)
+    side = 1.0 if p["chaise"] == "right" else -1.0
+    lx = -dx / 2 + (p["back"] + p["depth"]) / 2
+    lz = side * (dz / 2 - (p["chaise_width"] + p["arm"]) / 2)
+    return tuple(round(v, 3) for v in _to_room(item, lx, lz))
+
+
+def _seat(x, y, facing, activity):
+    """Where a person using a piece sits or stands, facing (deg CCW from +x), doing what."""
+    return {"x": x, "y": y, "facing": float(facing), "activity": activity}
 
 
 def _survey():
@@ -208,9 +225,9 @@ def _sink_basin(sink):
     return [round(v, 4) for v in (x0 + r, y0 + f, x1 - r, y1 - r)]
 
 
-def _seat_at(b, facing):
+def _seat_at(b, facing, activity):
     c = _centre(b)
-    return (c[0], c[1], facing)
+    return _seat(c[0], c[1], facing, activity)
 
 
 def furniture() -> list[Item]:
@@ -221,7 +238,8 @@ def furniture() -> list[Item]:
     sofa = _one(es, "Sectional Burrow Nomad Chaise")
     s = Item("sofa", "sectional", "Sofa", _bbox(sofa), 0, sofa["ztop"], 0.0, "couch",
              params={**SOFA, "chaise": "right"})
-    s.seat = (*sofa_seat(s), 0.0)
+    s.seats = [_seat(*sofa_seat(s), 0.0, "couch"), _seat(*chaise_seat(s), 0.0, "lounger")]
+    s.__post_init__()
     out.append(s)
     ct = _one(es, "Coffee Table Plinth")
     out.append(Item("coffee_table", "coffee_table", "Coffee table", _bbox(ct), 0, ct["ztop"]))
@@ -243,9 +261,9 @@ def furniture() -> list[Item]:
     chairs = _many(es, "Armchair Divina", 2)
     west, east = sorted(chairs, key=lambda e: e["u"])
     out.append(Item("armchair_w", "armchair", "Armchair", _bbox(west), 0, west["ztop"], 0.0,
-                    "lounge_read_w", seat=_seat_at(_bbox(west), 0.0)))
+                    "lounge_read_w", seats=[_seat_at(_bbox(west), 0.0, "lounge_read_w")]))
     out.append(Item("armchair_e", "armchair", "Armchair", _bbox(east), 0, east["ztop"], 180.0,
-                    "lounge_read_e", seat=_seat_at(_bbox(east), 180.0)))
+                    "lounge_read_e", seats=[_seat_at(_bbox(east), 180.0, "lounge_read_e")]))
     rt = _one(es, "Coffee Table Flume Round")
     out.append(Item("window_table", "round_table", "Round table", _bbox(rt), 0, rt["ztop"]))
 
@@ -260,7 +278,7 @@ def furniture() -> list[Item]:
     chair_h = max(c["ztop"] for c in survey_chairs)
     for i, (b, facing) in enumerate(_dining_chairs(tb, chair_size)):
         out.append(Item(f"dining_chair_{i}", "chair", "Dining chair", b, 0, chair_h, facing,
-                        "dining", seat=_seat_at(b, facing)))
+                        "dining", seats=[_seat_at(b, facing, "dining")]))
 
     # The island top overhangs its base on the S side, where the stools are. The survey has
     # the stools pushed fully under it; they are pulled out to sitting position. The sink is
@@ -271,10 +289,10 @@ def furniture() -> list[Item]:
     sink = _one(es, "Kitchen Sink Norrsjon + Faucet")
     basin = _sink_basin(sink)
     out.append(Item("island", "island", "Kitchen island", _union(island), 0, top["ztop"],
-                    270.0, "cooking",
+                    270.0, "cooking_range",
                     params={"overhang": round(overhang, 3), "cutout": basin,
                             "cutout_depth": SINK_BASIN["depth"]}))
-    out.append(Item("sink", "sink", "Sink", _bbox(sink), 0, sink["ztop"], 270.0, "cooking",
+    out.append(Item("sink", "sink", "Sink", _bbox(sink), 0, sink["ztop"], 270.0, "cooking_range",
                     params={"basin": basin, "depth": SINK_BASIN["depth"],
                             "counter": top["ztop"]}))
     for i, e in enumerate(sorted(_many(es, "Counter Stool Onda", 3), key=lambda e: e["u"])):
@@ -282,20 +300,27 @@ def furniture() -> list[Item]:
         dy = y1 - (top["vmin"] + STOOL_TUCK)
         b = (x0, y0 - dy, x1, y1 - dy)
         out.append(Item(f"stool_{i}", "stool", "Counter stool", b, 0, e["ztop"], 90.0,
-                        "counter", seat=_seat_at(b, 90.0)))
+                        "counter", seats=[_seat_at(b, 90.0, "counter")]))
 
     # Kitchen run on the N wall: base counters either side of the range, the range, the
-    # fridge with its tall cabinet above, and the wall cabinets.
+    # fridge with its tall cabinet above, and the wall cabinets. Three standing spots in the
+    # aisle (Tony): the W counter by the window, the range (with the sink behind), the E
+    # counter. All stand midway between the island and the range front, facing the wall.
+    rng = _one(es, "Range GE Slide-In 30in")
+    aisle_y = (_union(island)[3] + rng["vmin"]) / 2
+    kitchen = ("cooking_w", "cooking_e")
     bases = _group(es, lambda e: e["vmin"] >= 9.8 and e["vmax"] > 10.3 and 0.89 <= e["ztop"] <= 0.91,
                    "base counters")
     for i, b in enumerate(sorted(bases, key=lambda e: e["umin"])):
+        x = (b["umin"] + b["umax"]) / 2
         out.append(Item(f"counter_{i}", "counter", "Counter", _bbox(b), 0, b["ztop"], 270.0,
-                        "cooking"))
-    rng = _one(es, "Range GE Slide-In 30in")
-    out.append(Item("range", "range", "Range", _bbox(rng), 0, rng["ztop"], 270.0, "cooking"))
+                        kitchen[i], seats=[_seat(x, aisle_y, 90.0, kitchen[i])]))
+    x = (rng["umin"] + rng["umax"]) / 2
+    out.append(Item("range", "range", "Range", _bbox(rng), 0, rng["ztop"], 270.0,
+                    "cooking_range", seats=[_seat(x, aisle_y, 90.0, "cooking_range")]))
     fridge = _one(es, "Fridge Whirlpool French Door")
     out.append(Item("fridge", "fridge", "Fridge", _bbox(fridge), 0, fridge["ztop"], 270.0,
-                    "cooking"))
+                    "cooking_e"))
     tall = _group(es, lambda e: e["umin"] > 3.4 and e["vmin"] >= 9.8 and e["vmax"] > 10.3
                   and e["ztop"] >= 2.99, "fridge cabinet")
     out.append(Item("fridge_cabinet", "cabinet", "Cabinet", _union(tall), fridge["ztop"], 3.0,
@@ -315,7 +340,7 @@ def furniture() -> list[Item]:
     dy = _centre(desk)[1]
     b = (desk[2] - DINING_TUCK, dy - w / 2, desk[2] - DINING_TUCK + d, dy + w / 2)
     out.append(Item("desk_chair", "chair", "Desk chair (added)", b, 0, chair_h, 180.0, "desk",
-                    added=True, seat=_seat_at(b, 180.0)))
+                    added=True, seats=[_seat_at(b, 180.0, "desk")]))
     return out
 
 
@@ -344,8 +369,8 @@ class State:
 class Activity:
     id: str
     label: str
-    states: tuple[str, ...]          # couch has two: TV off / TV on
-    spot: tuple[float, float]        # default spot, for clicks on items without a seat
+    states: tuple[str, ...]          # the sofa's two have TV off / TV on
+    spot: tuple[float, float]        # its first seat: for clicks on pieces without seats
     facing: float
     pose: str
 
@@ -398,36 +423,42 @@ def states() -> list[State]:
     lux, lux_min = _activity_lux()
     w, d = config.ROOM_W, config.ROOM_D
     items = furniture()
+    seat = {}
+    for i in items:
+        for st in i.seats:
+            seat.setdefault(st["activity"], (st["x"], st["y"]))
     f = {i.id: i for i in items}
     tv = _centre(f["tv"].bbox)
     table = _centre(f["dining_table"].bbox)
-    stools = [i.seat for i in items if i.type == "stool"]
-    counter = (sum(s[0] for s in stools) / len(stools), sum(s[1] for s in stools) / len(stools))
-    rng = f["range"].bbox
-    island = f["island"].bbox
+    stools = [st for i in items if i.type == "stool" for st in i.seats]
+    counter = (sum(s["x"] for s in stools) / len(stools), sum(s["y"] for s in stools) / len(stools))
     desk = _centre(f["desk"].bbox)
-    # Cooking: the aisle between the island and the range, in front of the range.
-    cook = ((rng[0] + rng[2]) / 2, (island[3] + rng[1]) / 2)
-    # Screen proxy: in front of the TV, between it and the coffee table, clear of the sofa zone.
-    proxy = (tv[0] - 0.8, tv[1])
 
     def z(p, target, radius=ZONE_RADIUS, role="activity"):
         return Zone(round(p[0], 3), round(p[1], 3), float(target), float(radius), role)
 
-    couch = z(f["sofa"].seat, lux["Relaxing / TV"])
+    relax = lux["Relaxing / TV"]
+    # Screen proxy: in front of the TV, between it and the coffee table, clear of the sofa zones.
+    screen = z((tv[0] - 0.8, tv[1]), lux_min, SCREEN_PROXY_RADIUS, "screen_proxy")
+    cook = lux["Cooking"]
     out = [
         State("ambient", "Ambient", "ambient",
               (z((w / 2, d / 2), AMBIENT_LUX, math.hypot(w, d) / 2 + 0.01, "ambient"),)),
-        State("couch_relax", "Relaxing on the sofa", "activity", (couch,)),
-        State("couch_tv", "Watching TV", "activity",
-              (couch, z(proxy, lux_min, SCREEN_PROXY_RADIUS, "screen_proxy"))),
+        State("couch_relax", "Relaxing on the sofa", "activity", (z(seat["couch"], relax),)),
+        State("couch_tv", "Watching TV", "activity", (z(seat["couch"], relax), screen)),
+        State("lounger_relax", "Relaxing on the chaise", "activity",
+              (z(seat["lounger"], relax),)),
+        State("lounger_tv", "Watching TV from the chaise", "activity",
+              (z(seat["lounger"], relax), screen)),
         State("lounge_read_w", "Reading by the window", "activity",
-              (z(f["armchair_w"].seat, lux["Reading"]),)),
+              (z(seat["lounge_read_w"], lux["Reading"]),)),
         State("lounge_read_e", "Reading by the window", "activity",
-              (z(f["armchair_e"].seat, lux["Reading"]),)),
+              (z(seat["lounge_read_e"], lux["Reading"]),)),
         State("dining", "Dining", "activity", (z(table, lux["Dining"]),)),
         State("counter", "At the counter", "activity", (z(counter, lux["Dining"]),)),
-        State("cooking", "Cooking", "activity", (z(cook, lux["Cooking"]),)),
+        State("cooking_w", "Cooking", "activity", (z(seat["cooking_w"], cook),)),
+        State("cooking_range", "Cooking", "activity", (z(seat["cooking_range"], cook),)),
+        State("cooking_e", "Cooking", "activity", (z(seat["cooking_e"], cook),)),
         State("desk", "Desk work", "activity", (z(desk, lux["Desk work"]),)),
     ]
     for k, p in enumerate(standing_points(items)):
@@ -436,23 +467,30 @@ def states() -> list[State]:
     return out
 
 
+ACTIVITY_LIST = (
+    # id, label, states, pose
+    ("couch", "Sofa", ("couch_relax", "couch_tv"), "sit"),
+    ("lounger", "Chaise", ("lounger_relax", "lounger_tv"), "recline"),
+    ("lounge_read_w", "Reading chair", ("lounge_read_w",), "read"),
+    ("lounge_read_e", "Reading chair", ("lounge_read_e",), "read"),
+    ("dining", "Dining table", ("dining",), "sit_table"),
+    ("counter", "Counter", ("counter",), "sit_table"),
+    ("cooking_w", "Kitchen counter", ("cooking_w",), "cook"),
+    ("cooking_range", "Range", ("cooking_range",), "cook"),
+    ("cooking_e", "Kitchen counter", ("cooking_e",), "cook"),
+    ("desk", "Desk", ("desk",), "type"),
+)
+
+
 def activities() -> list[Activity]:
-    f = {i.id: i for i in furniture()}
-    st = {s.id: s for s in states()}
-    cook = st["cooking"].zones[0]
-
-    def a(id_, label, states_, seat, pose):
-        return Activity(id_, label, states_, (seat[0], seat[1]), seat[2], pose)
-
-    return [
-        a("couch", "Sofa", ("couch_relax", "couch_tv"), f["sofa"].seat, "sit"),
-        a("lounge_read_w", "Reading chair", ("lounge_read_w",), f["armchair_w"].seat, "read"),
-        a("lounge_read_e", "Reading chair", ("lounge_read_e",), f["armchair_e"].seat, "read"),
-        a("dining", "Dining table", ("dining",), f["dining_chair_0"].seat, "sit_table"),
-        a("counter", "Counter", ("counter",), f["stool_1"].seat, "sit_table"),
-        a("cooking", "Kitchen", ("cooking",), (cook.x, cook.y, 90.0), "cook"),
-        a("desk", "Desk", ("desk",), f["desk_chair"].seat, "type"),
-    ]
+    """Each activity's default spot is its first seat (for clicks on pieces without seats,
+    such as the dining table or the island)."""
+    first = {}
+    for i in furniture():
+        for st in i.seats:
+            first.setdefault(st["activity"], st)
+    return [Activity(a, label, states_, (first[a]["x"], first[a]["y"]), first[a]["facing"], pose)
+            for a, label, states_, pose in ACTIVITY_LIST]
 
 
 def occupants(state: State):

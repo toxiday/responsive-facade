@@ -147,24 +147,60 @@ def test_upper_cabinets_hang_on_the_north_wall(items):
             assert config.ROOM_D - i.bbox[3] < 0.1
 
 
-def test_every_seat_is_clickable_and_on_its_piece(items):
-    seated = [i for i in items if i.seat]
-    assert {i.type for i in seated} == {"sectional", "armchair", "chair", "stool"}
-    assert len(seated) == 1 + 2 + 7 + 3
+SITTING = {"sectional", "armchair", "chair", "stool"}
+STANDING_AT = {"counter", "range"}
+
+
+def test_every_seat_is_clickable_and_placed(items):
     acts = {a.id for a in room.activities()}
+    rects = [r for i in items if i.obstacle for r in i.footprint]
+    seated = [i for i in items if i.seats]
+    assert {i.type for i in seated} == SITTING | STANDING_AT
+    assert sum(len(i.seats) for i in seated) == 2 + 2 + 7 + 3 + 3   # sofa has two
     for i in seated:
         assert i.click in acts, i.id
-        x, y, _ = i.seat
-        assert any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in i.footprint), i.id
+        for st in i.seats:
+            assert st["activity"] in acts, i.id
+            p = (st["x"], st["y"])
+            if i.type in SITTING:                # on the piece
+                assert any(r[0] <= p[0] <= r[2] and r[1] <= p[1] <= r[3]
+                           for r in i.footprint), i.id
+            else:                                # standing in front of it, facing it
+                assert room._standable(p, rects), i.id
+                assert i.bbox[0] <= p[0] <= i.bbox[2] and p[1] < i.bbox[1], i.id
+                assert st["facing"] == 90.0
+
+
+def test_sofa_has_a_seat_on_the_chaise(items):
+    sofa = next(i for i in items if i.id == "sofa")
+    main, chaise = sofa.footprint
+    by_act = {st["activity"]: st for st in sofa.seats}
+    assert set(by_act) == {"couch", "lounger"}
+    lounger = by_act["lounger"]
+    assert chaise[1] <= lounger["y"] <= chaise[3]          # within the chaise's width
+    assert lounger["facing"] == by_act["couch"]["facing"] == 0.0
+
+
+def test_kitchen_has_three_spots_along_the_aisle(items, states):
+    by_id = {i.id: i for i in items}
+    spots = [by_id[k].seats[0] for k in ("counter_0", "range", "counter_1")]
+    assert [st["activity"] for st in spots] == ["cooking_w", "cooking_range", "cooking_e"]
+    xs = [st["x"] for st in spots]
+    assert xs == sorted(xs) and min(b - a for a, b in zip(xs, xs[1:])) > 0.9
+    island, rng = by_id["island"], by_id["range"]
+    for st in spots:
+        assert island.bbox[3] < st["y"] < rng.bbox[1]
+        zone = states[st["activity"]].zones[0]
+        assert (zone.x, zone.y) == pytest.approx((st["x"], st["y"]), abs=1e-3)
 
 
 def test_both_armchairs_are_reading_spots(states, items):
     by_id = {i.id: i for i in items}
     for side in ("w", "e"):
         st = states[f"lounge_read_{side}"]
-        seat = by_id[f"armchair_{side}"].seat
-        assert (st.zones[0].x, st.zones[0].y) == pytest.approx(seat[:2], abs=1e-3)
-        assert by_id[f"armchair_{side}"].click == f"lounge_read_{side}"
+        (seat,) = by_id[f"armchair_{side}"].seats
+        assert (st.zones[0].x, st.zones[0].y) == pytest.approx((seat["x"], seat["y"]), abs=1e-3)
+        assert by_id[f"armchair_{side}"].click == seat["activity"] == f"lounge_read_{side}"
 
 
 def test_standing_points_cover_the_open_floor(states, items):
@@ -192,20 +228,23 @@ def test_rug_and_wall_cabinets_are_not_obstacles(items):
     assert by_id["sofa"].obstacle and by_id["island"].obstacle
 
 
-def test_seven_states_with_v3_activity_lux(states):
+def test_activity_states_with_v3_activity_lux(states):
     v3 = config.import_v3()
     lux = dict(v3.live_solver.ACTIVITIES)
     assert [k for k, s in states.items() if s.kind != "standing"] == [
-        "ambient", "couch_relax", "couch_tv", "lounge_read_w", "lounge_read_e", "dining",
-        "counter", "cooking", "desk"]
+        "ambient", "couch_relax", "couch_tv", "lounger_relax", "lounger_tv", "lounge_read_w",
+        "lounge_read_e", "dining", "counter", "cooking_w", "cooking_range", "cooking_e", "desk"]
     assert states["couch_relax"].zones[0].target == lux["Relaxing / TV"]
+    assert states["lounger_relax"].zones[0].target == lux["Relaxing / TV"]
     assert states["lounge_read_w"].zones[0].target == lux["Reading"]
     assert states["lounge_read_e"].zones[0].target == lux["Reading"]
     assert states["counter"].zones[0].target == lux["Dining"]
     assert states["dining"].zones[0].target == lux["Dining"]
-    assert states["cooking"].zones[0].target == lux["Cooking"]
+    for k in ("cooking_w", "cooking_range", "cooking_e"):
+        assert states[k].zones[0].target == lux["Cooking"]
     assert states["desk"].zones[0].target == lux["Desk work"]
     assert states["couch_tv"].zones[1].target == v3.live_solver.TARGET_LUX_MIN
+    assert states["lounger_tv"].zones[1] == states["couch_tv"].zones[1]
     assert states["ambient"].zones[0].target == room.AMBIENT_LUX
 
 
@@ -215,8 +254,9 @@ def test_ambient_covers_the_whole_floor(states):
     assert np.allclose(tgt, room.AMBIENT_LUX)
 
 
-def test_couch_tv_zones_are_disjoint(states):
-    st = states["couch_tv"]
+@pytest.mark.parametrize("state", ["couch_tv", "lounger_tv"])
+def test_tv_zones_are_disjoint(states, state):
+    st = states[state]
     a, b = st.zones
     assert np.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius
     _tgt, owner = room.target_and_owner(st)

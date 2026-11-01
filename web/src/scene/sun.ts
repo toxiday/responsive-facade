@@ -8,6 +8,10 @@ import { roomToThree, towardSunThree } from './frame';
 import { WALL_T } from './shell';
 
 const DISTANCE = 30;
+// three's Lambert term divides by pi, so a sky light of intensity pi shows a surface at its own
+// colour. Shaded tops therefore show the furniture palette nearly true (the sky tint is close
+// to white); sunlit patches go brighter and the tone mapper rolls them off.
+const SKY = Math.PI;
 
 export interface SunSlot {
   sunRoom: Vec3;
@@ -18,7 +22,7 @@ export interface SunSlot {
 
 export class SunLight {
   readonly light = new DirectionalLight(0xffffff, 3);
-  readonly sky = new HemisphereLight(0xdfe9f3, 0xb5a998, 0.9);
+  readonly sky = new HemisphereLight(0xf8f9fb, 0xd6cec2, SKY);
   private readonly centre: Vector3;
   private readonly corners: Vector3[];
 
@@ -40,7 +44,7 @@ export class SunLight {
   set(slot: SunSlot | null): void {
     if (!slot) {
       this.light.visible = false;
-      this.sky.intensity = 1.1;
+      this.sky.intensity = SKY + 0.3;
       return;
     }
     this.light.visible = true;
@@ -53,7 +57,7 @@ export class SunLight {
     const a = Math.max(0, Math.min(1, (slot.alt - 5) / 40));
     this.light.color.copy(new Color('#ffb36b')).lerp(new Color('#fff6ea'), a);
     this.light.intensity = 0.8 + 3.7 * Math.min(1, slot.dni / 800);
-    this.sky.intensity = 1.0 + Math.min(0.8, slot.dhi / 300);
+    this.sky.intensity = SKY + 0.4 * Math.min(1, slot.dhi / 300);
     this.fitShadow();
   }
 

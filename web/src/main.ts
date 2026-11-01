@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     const standing = manifest.states.filter((s) => s.kind === 'standing').length;
     const activity = manifest.states.filter((s) => s.kind === 'activity').length;
     hud([
-      `Magenta: seats and the cooking spot (tick = facing); circles: the ${activity} activity zones.`,
+      `Magenta: seats and kitchen spots (tick = facing); circles: the ${activity} activity zones.`,
       `Blue: ${standing} standing positions on the open floor (one state each).`,
     ]);
   } else if (debug === 'rhino') {

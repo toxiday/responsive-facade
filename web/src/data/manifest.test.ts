@@ -18,10 +18,10 @@ describe('manifest', () => {
     }
   });
 
-  it('every clickable seat names an activity', () => {
+  it('every seat names an activity', () => {
     const acts = new Set(manifest.activities.map((a) => a.id));
     for (const item of manifest.furniture)
-      if (item.seat) expect(acts.has(item.click ?? ''), item.id).toBe(true);
+      for (const s of item.seats) expect(acts.has(s.activity), item.id).toBe(true);
   });
 
   it('has standing states with one zone each', () => {

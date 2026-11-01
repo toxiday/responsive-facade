@@ -15,6 +15,15 @@ export interface Room {
   sensor_height: number;
 }
 
+/** Where a person sits or stands to use a piece, which way they face, and what they do. */
+export interface Seat {
+  x: number;
+  y: number;
+  /** Degrees counter-clockwise from room +x. */
+  facing: number;
+  activity: string;
+}
+
 export interface FurnitureItem {
   id: string;
   type: string;
@@ -27,8 +36,8 @@ export interface FurnitureItem {
   added: boolean;
   /** Shape parameters for the builder (bake/room.py), e.g. the sofa's chaise. */
   params: Record<string, number | string | number[]> | null;
-  /** Where a person using it sits or stands: x, y, facing (deg CCW from +x). */
-  seat: [number, number, number] | null;
+  /** Where people use it (the sofa has two: main seat and chaise). */
+  seats: Seat[];
   /** The wall it hangs on; the cutaway hides it with that wall. */
   wall: Side | null;
   obstacle: boolean;

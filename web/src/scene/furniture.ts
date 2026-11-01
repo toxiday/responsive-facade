@@ -14,8 +14,10 @@ import { PALETTE, solid } from './materials';
 
 const MAT = {
   base: solid(PALETTE.furniture),
-  fabric: solid(PALETTE.fabric, 1),
-  wood: solid(PALETTE.wood, 0.8),
+  upholstery: solid(PALETTE.olive, 1),
+  cinnamon: solid(PALETTE.cinnamon, 0.8),
+  sulphur: solid(PALETTE.sulphur, 0.7),
+  slate: solid(PALETTE.slate, 0.5),
   dark: solid(PALETTE.dark, 0.5),
   steel: solid(PALETTE.steel, 0.4),
   added: solid(PALETTE.added),
@@ -123,65 +125,63 @@ const BUILDERS: Record<string, Builder> = {
     const arm = num(p, 'arm', 0.2);
     const side = p.chaise === 'right' ? 1 : p.chaise === 'left' ? -1 : 0;
     const x0 = -dx / 2;
-    soft(g, MAT.fabric, depth, seat, dz, x0 + depth / 2);
-    soft(g, MAT.fabric, back, h, dz, x0 + back / 2, h / 2, 0, 0.09);
+    soft(g, MAT.upholstery, depth, seat, dz, x0 + depth / 2);
+    soft(g, MAT.upholstery, back, h, dz, x0 + back / 2, h / 2, 0, 0.09);
     if (side) {
       const cw = num(p, 'chaise_width', 0.8);
       const len = dx - depth + 0.06; // overlaps the seat so the rounding leaves no gap
       const z = side * (dz / 2 - cw / 2);
-      soft(g, MAT.fabric, len, seat - 0.03, cw, dx / 2 - len / 2, (seat - 0.03) / 2, z);
-      // Arms: full length on the chaise's outer side, sofa depth at the other end.
-      soft(g, MAT.fabric, dx, 0.6, arm, 0, 0.3, side * (dz / 2 - arm / 2), 0.08);
-      soft(g, MAT.fabric, depth, 0.6, arm, x0 + depth / 2, 0.3, -side * (dz / 2 - arm / 2), 0.08);
-    } else {
-      for (const s of [-1, 1])
-        soft(g, MAT.fabric, depth, 0.6, arm, x0 + depth / 2, 0.3, s * (dz / 2 - arm / 2), 0.08);
+      soft(g, MAT.upholstery, len, seat - 0.03, cw, dx / 2 - len / 2, (seat - 0.03) / 2, z);
     }
+    // Arms at both ends, sofa depth; the chaise runs out past its arm.
+    for (const s of [-1, 1])
+      soft(g, MAT.upholstery, depth, 0.6, arm, x0 + depth / 2, 0.3, s * (dz / 2 - arm / 2), 0.08);
   },
   armchair(g, { dx, dz, h }) {
-    soft(g, MAT.fabric, dx, 0.42, dz);
-    soft(g, MAT.fabric, 0.2, h, dz, -dx / 2 + 0.1, h / 2, 0, 0.08);
-    for (const s of [-1, 1]) soft(g, MAT.fabric, dx, 0.6, 0.14, 0, 0.3, s * (dz / 2 - 0.07));
+    soft(g, MAT.upholstery, dx, 0.42, dz);
+    soft(g, MAT.upholstery, 0.2, h, dz, -dx / 2 + 0.1, h / 2, 0, 0.08);
+    for (const s of [-1, 1]) soft(g, MAT.upholstery, dx, 0.6, 0.14, 0, 0.3, s * (dz / 2 - 0.07));
   },
   chair(g, { dx, dz, h }) {
     const s = Math.min(dx, dz) * 0.85;
-    box(g, MAT.base, s, 0.04, s, 0, 0.45);
-    box(g, MAT.base, 0.04, h - 0.45, s, -s / 2 + 0.02, 0.45 + (h - 0.45) / 2);
+    box(g, MAT.cinnamon, s, 0.04, s, 0, 0.45);
+    box(g, MAT.cinnamon, 0.04, h - 0.45, s, -s / 2 + 0.02, 0.45 + (h - 0.45) / 2);
     legs(g, MAT.steel, s, s, 0.43, 0.03);
   },
   stool(g, { dx, dz, h }) {
     // Counter stool: seat at counter-stool height with a low back up to the surveyed top.
     const r = (Math.min(dx, dz) / 2) * 0.85;
     const seatH = h > 0.75 ? 0.65 : h;
-    cyl(g, MAT.wood, r, 0.04, 0, seatH - 0.02);
+    cyl(g, MAT.cinnamon, r, 0.04, 0, seatH - 0.02);
     const s = r * 1.5;
     legs(g, MAT.steel, s, s, seatH - 0.04, 0.02);
     for (const side of [-1, 1])
       box(g, MAT.steel, s - 0.04, 0.02, 0.02, 0, 0.25, side * (s / 2 - 0.02));
-    if (h - seatH > 0.08) box(g, MAT.wood, 0.03, h - seatH, r * 1.5, -r + 0.02, (h + seatH) / 2);
+    if (h - seatH > 0.08)
+      box(g, MAT.cinnamon, 0.03, h - seatH, r * 1.5, -r + 0.02, (h + seatH) / 2);
   },
   coffee_table(g, { dx, dz, h }) {
-    box(g, MAT.wood, dx, h, dz);
+    box(g, MAT.cinnamon, dx, h, dz);
   },
   round_table(g, { dx, dz, h }) {
     const r = Math.min(dx, dz) / 2;
-    cyl(g, MAT.wood, r, 0.03, 0, h - 0.015);
+    cyl(g, MAT.cinnamon, r, 0.03, 0, h - 0.015);
     cyl(g, MAT.steel, 0.03, h - 0.03, 0, (h - 0.03) / 2);
     cyl(g, MAT.steel, r * 0.6, 0.02, 0, 0.01);
   },
   dining_table(g, { dx, dz, h }) {
-    box(g, MAT.wood, dx, 0.04, dz, 0, h - 0.02);
-    legs(g, MAT.wood, dx, dz, h - 0.04, 0.08);
+    box(g, MAT.sulphur, dx, 0.04, dz, 0, h - 0.02);
+    legs(g, MAT.sulphur, dx, dz, h - 0.04, 0.08);
   },
   desk(g, { dx, dz, h }) {
     box(g, MAT.added, dx, 0.03, dz, 0, h - 0.015);
     legs(g, MAT.steel, dx, dz, h - 0.03, 0.04);
   },
   console(g, { dx, dz, h }) {
-    box(g, MAT.base, dx, h, dz);
+    box(g, MAT.sulphur, dx, h, dz);
   },
   tv(g, { dz, h }) {
-    box(g, MAT.dark, 0.04, h, dz, 0, h / 2);
+    box(g, MAT.slate, 0.04, h, dz, 0, h / 2);
   },
   island(g, c) {
     // The top overhangs the base at the front (the stool side) so the stools tuck under it.
@@ -195,18 +195,18 @@ const BUILDERS: Record<string, Builder> = {
     const yHole = hole ? h - num(p, 'cutout_depth', 0.2) : h - t;
     slab(g, MAT.base, base, null, 0, yHole);
     if (hole) slab(g, MAT.base, base, hole, yHole, h - t);
-    slab(g, MAT.steel, [-dx / 2, -dz / 2, dx / 2, dz / 2], hole, h - t, h);
+    slab(g, MAT.sulphur, [-dx / 2, -dz / 2, dx / 2, dz / 2], hole, h - t, h);
   },
   counter(g, { dx, dz, h }) {
     box(g, MAT.base, dx, h - 0.04, dz);
-    box(g, MAT.steel, dx, 0.04, dz, 0, h - 0.02);
+    box(g, MAT.sulphur, dx, 0.04, dz, 0, h - 0.02);
   },
   range(g, { dx, dz, h }) {
-    box(g, MAT.steel, dx, h - 0.03, dz);
-    box(g, MAT.dark, dx, 0.03, dz, 0, h - 0.015);
+    box(g, MAT.slate, dx, h - 0.03, dz);
+    box(g, MAT.slate, dx, 0.03, dz, 0, h - 0.015);
   },
   fridge(g, { dx, dz, h }) {
-    box(g, MAT.steel, dx, h, dz);
+    box(g, MAT.slate, dx, h, dz);
   },
   cabinet(g, { dx, dz, h }) {
     box(g, MAT.base, dx, h, dz);
@@ -240,7 +240,7 @@ function rug(item: FurnitureItem): Group {
   const g = new Group();
   g.name = `furniture-${item.id}`;
   g.userData.item = item;
-  const m = new Mesh(new PlaneGeometry(x1 - x0, y1 - y0), solid(PALETTE.rug, 1));
+  const m = new Mesh(new PlaneGeometry(x1 - x0, y1 - y0), solid(PALETTE.sulphur, 1));
   m.rotation.x = -Math.PI / 2;
   roomToThree((x0 + x1) / 2, (y0 + y1) / 2, 0.004, m.position);
   m.receiveShadow = true;
@@ -286,7 +286,7 @@ export function buildItem(item: FurnitureItem): Group {
   const g = new Group();
   g.name = `furniture-${item.id}`;
   g.userData.item = item;
-  const build = BUILDERS[item.type] ?? BUILDERS.console!;
+  const build = BUILDERS[item.type] ?? BUILDERS.cabinet!;
   build(g, { dx, dz, h: item.z1 - item.z0, p: item.params ?? {}, localRect });
   // Wall-hung pieces are hidden with their wall, so they need materials of their own.
   if (item.wall)
