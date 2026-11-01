@@ -25,6 +25,7 @@ export interface BakeView {
   day: number;
   layer: string;
   fill: 'radiance' | 'surrogate';
+  tvOn: boolean;
   ship: string;
   flips: number | null;
   metrics: RecordMetrics;
@@ -70,6 +71,9 @@ export async function runBake(
   }
 
   const state = manifest.states.find((x) => x.id === stateId);
+  // The TV is on in the states that keep a screen zone dim (watching TV).
+  const tvOn = state?.zones.some((z) => z.role === 'screen_proxy') ?? false;
+  if (tvOn) await stage.tv?.setOn(true);
   if (state && state.kind !== 'ambient') {
     const mask = Array.from(ownerGrid(state.owner), (v) => (v >= 0 ? 1 : 0));
     stage.scene.add(maskOutline(room, mask, room.sensor_height + 0.004));
@@ -95,6 +99,7 @@ export async function runBake(
     day: data.meta.day,
     layer,
     fill,
+    tvOn,
     ship: rec.ship[s]!,
     flips: rec.flips[s] ?? null,
     metrics: rec.metrics[s]!,

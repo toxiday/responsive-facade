@@ -11,6 +11,11 @@
 // blotches in dim rooms. Window reveals count as inside; the walls' exterior faces keep the sky
 // light unchanged.
 //
+// The fill is compressed for display (Tony, 2026-11-01: keep the sun patches directly visible):
+// it scales the sky light by (lux / 200) ** FILL_GAMMA, so 200 lux still reads as 50% grey but
+// 800 lux renders 2× rather than 4×, and 50 lux 0.5× rather than 0.25×. Bright rooms no longer
+// wash to white around the sun patches, and dim rooms stay readable; the order is kept.
+//
 // Upward faces take the field where they are. A vertical face takes it FACING_M in front of
 // itself, in the direction it faces: a wall is lit by the room it looks at, not by the floor at
 // its foot. Otherwise a window wall glows like the floor beside its own windows, which it cannot
@@ -34,6 +39,13 @@ import { WALL_T } from './shell';
 import { AMBIENT_LUX } from './sun';
 
 const CELLS = GRID_N * GRID_N;
+/** Display compression of the fill; 1 would be linear in lux. */
+export const FILL_GAMMA = 0.5;
+
+/** Sky light multiplier for `lux` of indirect light (1 at the 200 lux ambient target). */
+export function fillFactor(lux: number): number {
+  return Math.max(0, lux / AMBIENT_LUX) ** FILL_GAMMA;
+}
 
 /** Grow a 32×32 mask by one cell in all eight directions. */
 function dilate(mask: ArrayLike<number>): Uint8Array {
@@ -117,7 +129,7 @@ const FACING_M = 1.5;
 const HEMI = 'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );';
 
 const PARS = /* glsl */ `
-uniform sampler2D rfFill;  // 32x32 fill factor (lux / AMBIENT_LUX), texel (col, 31 - row)
+uniform sampler2D rfFill;  // 32x32 fill factor (fillFactor), texel (col, 31 - row)
 uniform vec4 rfFillRoom;   // room width, depth, 1 when the fill is on, inside margin (m)
 float rfFillAt( ivec2 p ) {
   return texelFetch( rfFill, clamp( p, ivec2( 0 ), ivec2( 31 ) ), 0 ).r;
@@ -164,7 +176,7 @@ export class DaylightFill {
     if (!lux) return;
     for (let r = 0; r < GRID_N; r++)
       for (let c = 0; c < GRID_N; c++)
-        this.data[(GRID_N - 1 - r) * GRID_N + c] = (lux[r * GRID_N + c] ?? 0) / AMBIENT_LUX;
+        this.data[(GRID_N - 1 - r) * GRID_N + c] = fillFactor(lux[r * GRID_N + c] ?? 0);
     this.uniforms.rfFill.value.needsUpdate = true;
   }
 

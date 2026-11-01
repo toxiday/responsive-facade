@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_N } from '../data/grid';
-import { indirectLux } from './indirect';
+import { fillFactor, indirectLux } from './indirect';
 
 const N = GRID_N * GRID_N;
 const at = (r: number, c: number) => r * GRID_N + c;
@@ -41,5 +41,14 @@ describe('indirectLux', () => {
   it('leaves the lux alone when the sun reaches every cell', () => {
     const lux = new Float32Array(N).fill(5000);
     expect(indirectLux(lux, new Uint8Array(N).fill(1))[0]).toBe(5000);
+  });
+});
+
+describe('fillFactor', () => {
+  it('keeps 200 lux at 1 and compresses around it', () => {
+    expect(fillFactor(200)).toBeCloseTo(1, 6);
+    expect(fillFactor(800)).toBeCloseTo(2, 6);
+    expect(fillFactor(50)).toBeCloseTo(0.5, 6);
+    expect(fillFactor(0)).toBe(0);
   });
 });

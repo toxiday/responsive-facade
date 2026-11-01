@@ -65,6 +65,9 @@ function bakeShots() {
     ...states.map((s) => [`bake-1130-${s}`, q(s, '11:30')]),
     // The room lit by each state's Radiance lux, without the heatmap.
     ...states.map((s) => [`bake-lit-1130-${s}`, q(s, '11:30', '&layer=none')]),
+    // The TV on: late in the day, and from the south-west, facing the screen.
+    ['bake-tv-1630-couch_tv', q('couch_tv', '16:30', '&layer=none')],
+    ['bake-tv-1130-couch_tv-sw', q('couch_tv', '11:30', '&layer=none&cam=sw')],
     ['bake-1130-lounge_read_w-surrogate', q('lounge_read_w', '11:30', '&layer=surrogate')],
     ['bake-1130-desk-top', q('desk', '11:30', '&view=top')],
     ['bake-outside-1130-couch_relax', q('couch_relax', '11:30', '&layer=none&cam=sw&cut=0')],

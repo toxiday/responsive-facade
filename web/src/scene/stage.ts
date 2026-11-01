@@ -11,6 +11,7 @@ import { EdgePass, withEdges } from './edges';
 import { buildFurniture } from './furniture';
 import { Heatmap } from './heatmap';
 import { DaylightFill } from './indirect';
+import { TvGlow } from './tv';
 import { PALETTE } from './materials';
 import { createRenderer, rendererOptions } from './renderer';
 import { createShell, type Shell } from './shell';
@@ -28,6 +29,8 @@ export class Stage {
   readonly heatmap: Heatmap;
   /** Off until a view sets baked lux (indirect.ts). */
   readonly fill: DaylightFill;
+  /** The TV's screen, light and halo; off until a TV state is shown (tv.ts). */
+  readonly tv: TvGlow | null;
   readonly cutaway: Cutaway;
   readonly edges = new EdgePass();
   readonly compass: Compass;
@@ -51,6 +54,9 @@ export class Stage {
     this.sun = new SunLight(room, rendererOptions().shadowSize);
     this.heatmap = new Heatmap(room, manifest.legend);
     this.fill = new DaylightFill(room);
+    const tv = manifest.furniture.find((f) => f.type === 'tv');
+    this.tv = tv ? new TvGlow(tv) : null;
+    if (this.tv) this.scene.add(this.tv.group);
     this.scene.add(
       this.shell.group,
       this.facade.group,
