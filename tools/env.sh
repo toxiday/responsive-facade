@@ -21,6 +21,7 @@ export NPM_CONFIG_USERCONFIG="$RF_WS\\.tools\\npmrc"
 export npm_config_update_notifier=false npm_config_fund=false
 export NODE_REPL_HISTORY=""
 export GH_NO_UPDATE_NOTIFIER=1
+export PLAYWRIGHT_BROWSERS_PATH="$RF_WS\\.tools\\ms-playwright"
 
 # Drop any other activated venv (VS Code auto-activates Facade Designer V2's).
 unset VIRTUAL_ENV

@@ -11,7 +11,8 @@ export default defineConfig([
   { languageOptions: { globals: { ...globals.browser } } },
   {
     files: ['scripts/**/*.mjs', '*.config.{js,ts}'],
-    languageOptions: { globals: { ...globals.node } },
+    // scripts also hold page.evaluate callbacks that run in the browser
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   prettier,
 ]);

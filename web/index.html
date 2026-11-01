@@ -10,19 +10,9 @@
     <title>Responsive Facade</title>
   </head>
   <body>
-    <main id="app" class="placeholder">
-      <p class="eyebrow">Tony Dai · Daylight research</p>
-      <h1>Responsive Facade</h1>
-      <p class="lede">
-        A facade of operable panels that reconfigures around what the occupant is doing.
-      </p>
-      <p>
-        Each configuration is predicted by a neural surrogate and verified with Radiance, for one
-        living room in three cities, hour by hour on a representative day of each month.
-      </p>
-      <p class="status">Interactive demo in progress.</p>
-      <p><a href="https://tonydai.com">tonydai.com</a></p>
-    </main>
+    <div id="stage" aria-label="3D view of the living room"></div>
+    <div id="hud" class="hud">Loading…</div>
+    <noscript>This demo needs JavaScript and WebGL.</noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

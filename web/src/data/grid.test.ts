@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import conventions from '../__fixtures__/conventions.json';
 import { GRID_N, cellCentre, cellIndex, cellOf } from './grid';
 
 const W = 5.372487;
@@ -13,6 +14,16 @@ describe('floor grid convention', () => {
     expect(last.x).toBeCloseTo(W - W / 64, 9);
     expect(last.y).toBeCloseTo(D / 64, 9);
   });
+
+  for (const room of conventions.rooms) {
+    it(`matches v3 cell_centres for room ${room.name}`, () => {
+      for (let i = 0; i < GRID_N * GRID_N; i++) {
+        const c = cellCentre(Math.floor(i / GRID_N), i % GRID_N, room.width, room.depth);
+        expect(c.x).toBeCloseTo(room.cell_x[i]!, 5);
+        expect(c.y).toBeCloseTo(room.cell_y[i]!, 5);
+      }
+    });
+  }
 
   it('round-trips every cell centre', () => {
     for (let row = 0; row < GRID_N; row++) {

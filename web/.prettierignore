@@ -1,4 +1,5 @@
 dist/
 node_modules/
 public/data/
+src/__fixtures__/
 package-lock.json

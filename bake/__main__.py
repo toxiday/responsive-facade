@@ -5,6 +5,10 @@
 Commands
     smoke   import v3 read-only, load the surrogate on the GPU, run one sun condition and one
             forward pass on the baseline facade; writes bake/work/smoke.json
+    slots   median day + sun-up hours for every city and month; writes bake/work/slots/
+    m1      M1 orientation/shadow check (2 Radiance runs); writes web/src/__fixtures__/m1.json
+    manifest  room, furniture, states, legend, cities; writes web/public/data/manifest.json
+    fixtures  v3 geometry for the TypeScript tests; writes web/src/__fixtures__/conventions.json
 """
 
 from __future__ import annotations
@@ -65,12 +69,61 @@ def cmd_smoke(_args) -> int:
     return 0
 
 
+def cmd_slots(_args) -> int:
+    config.check_venv()
+    from . import slots
+
+    data = slots.write_all()
+    total = 0
+    for city, d in data.items():
+        counts = [len(m["slots"]) for m in d["months"]]
+        total += sum(counts)
+        days = " ".join(f"{m['month']}/{m['day']}" for m in d["months"])
+        print(f"{city:8s} {sum(counts):3d} slots  per month {counts}")
+        print(f"         days {days}")
+        skies = [s["sky"] for m in d["months"] for s in m["slots"]]
+        print("         sky  " + ", ".join(f"{k} {skies.count(k)}" for k in ("clear", "partly", "overcast")))
+    print(f"total {total} slots")
+    return 0
+
+
+def cmd_m1(args) -> int:
+    from . import m1
+
+    res = m1.run(force=args.force)
+    bad = [c for c in res["cases"] if c["iou_geometric_vs_radiance"] < m1.IOU_MIN]
+    return 1 if bad else 0
+
+
+def cmd_manifest(_args) -> int:
+    config.check_venv()
+    from . import manifest
+
+    print(manifest.write())
+    return 0
+
+
+def cmd_fixtures(_args) -> int:
+    config.check_venv()
+    from . import fixtures
+
+    print(fixtures.write())
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m bake")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("smoke", help="import v3 and run one forward pass")
+    sub.add_parser("slots", help="compute the baked days and hours")
+    p = sub.add_parser("m1", help="M1 orientation and shadow check")
+    p.add_argument("--force", action="store_true", help="re-run Radiance")
+    sub.add_parser("manifest", help="write web/public/data/manifest.json")
+    sub.add_parser("fixtures", help="write the TypeScript test fixtures")
     args = ap.parse_args(argv)
-    return {"smoke": cmd_smoke}[args.cmd](args)
+    cmds = {"smoke": cmd_smoke, "slots": cmd_slots, "m1": cmd_m1,
+            "manifest": cmd_manifest, "fixtures": cmd_fixtures}
+    return cmds[args.cmd](args)
 
 
 if __name__ == "__main__":

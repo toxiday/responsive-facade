@@ -26,6 +26,7 @@ $env:npm_config_update_notifier = 'false'
 $env:npm_config_fund = 'false'
 $env:NODE_REPL_HISTORY = ''
 $env:GH_NO_UPDATE_NOTIFIER = '1'
+$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $WS '.tools\ms-playwright'
 
 # Drop any other activated venv (VS Code auto-activates Facade Designer V2's).
 Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
