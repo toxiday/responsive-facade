@@ -57,3 +57,14 @@ body {
   color: var(--accent);
   text-decoration: none;
 }
+
+/* North arrow, bottom right (scene/compass.ts). */
+.compass {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 64px;
+  height: 64px;
+  color: var(--ink);
+  pointer-events: none;
+}

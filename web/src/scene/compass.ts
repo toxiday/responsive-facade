@@ -1,63 +1,63 @@
-// North arrow on the ground beside the room (guidelines §3.1). True north is clockwise from
-// room +y by north_angle; the room stays put, so the arrow is fixed in the scene.
+// North arrow (guidelines §3.1), fixed in the bottom-right corner of the screen. True north is
+// clockwise from room +y by north_angle; the room stays put and the camera orbits, so on every
+// frame the needle turns to where true north points in the current view. Drawn as SVG over
+// the canvas, so it is crisp at any pixel density.
 
-import {
-  CanvasTexture,
-  DoubleSide,
-  Group,
-  Mesh,
-  MeshBasicMaterial,
-  PlaneGeometry,
-  RingGeometry,
-  Shape,
-  ShapeGeometry,
-  SRGBColorSpace,
-} from 'three';
-import type { Room } from '../data/manifest';
-import { northThree, roomToThree } from './frame';
-import { PALETTE } from './materials';
+import { type Camera, Vector3 } from 'three';
+import { northThree } from './frame';
 
-function label(text: string): Mesh {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = `#${PALETTE.dark.getHexString()}`;
-  ctx.font = 'bold 96px Helvetica, Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, 64, 70);
-  const tex = new CanvasTexture(c);
-  tex.colorSpace = SRGBColorSpace;
-  return new Mesh(
-    new PlaneGeometry(0.42, 0.42),
-    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
-  );
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const RING_R = 22;
+const LABEL_R = 30;
+
+function el<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string | number>,
+): SVGElementTagNameMap[K] {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  return e;
 }
 
-export function createCompass(room: Room): Group {
-  const g = new Group();
-  g.name = 'compass';
-  const ink = new MeshBasicMaterial({ color: PALETTE.dark, side: DoubleSide });
-  const ring = new Mesh(new RingGeometry(0.5, 0.53, 64), ink);
-  const arrow = new Shape();
-  arrow.moveTo(0, 0.5);
-  arrow.lineTo(0.13, -0.3);
-  arrow.lineTo(0, -0.18);
-  arrow.lineTo(-0.13, -0.3);
-  arrow.closePath();
-  const needle = new Mesh(new ShapeGeometry(arrow), ink);
-  const n = label('N');
-  n.position.set(0, 0.78, 0);
+export class Compass {
+  readonly element: SVGSVGElement;
+  private readonly needle: SVGGElement;
+  private readonly label: SVGTextElement;
+  private readonly north: Vector3;
+  private angle = NaN;
 
-  // Built in the xy plane pointing +y; lay it flat and turn it to true north.
-  const flat = new Group();
-  flat.add(ring, needle, n);
-  flat.rotation.x = -Math.PI / 2;
-  const north = northThree(room.north_angle);
-  const spin = new Group();
-  spin.add(flat);
-  spin.rotation.y = Math.atan2(-north.x, -north.z);
-  g.add(spin);
-  roomToThree(room.width + 1.3, room.depth + 0.6, 0.0, g.position);
-  return g;
+  constructor(parent: HTMLElement, northAngle: number) {
+    this.north = northThree(northAngle);
+    const svg = el('svg', { class: 'compass', viewBox: '-36 -36 72 72', role: 'img' });
+    svg.setAttribute('aria-label', 'North arrow');
+    svg.append(
+      el('circle', { r: RING_R, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.2 }),
+    );
+    this.needle = el('g', {});
+    this.needle.append(el('polygon', { points: '0,-19 7,12 0,6 -7,12', fill: 'currentColor' }));
+    this.label = el('text', {
+      'text-anchor': 'middle',
+      'dominant-baseline': 'central',
+      'font-size': 11,
+      'font-weight': 700,
+      fill: 'currentColor',
+    });
+    this.label.textContent = 'N';
+    svg.append(this.needle, this.label);
+    parent.append(svg);
+    this.element = svg;
+  }
+
+  /** Turn the needle to true north as projected by `camera` around `target`. */
+  update(camera: Camera, target: Vector3): void {
+    const a = target.clone().project(camera);
+    const b = target.clone().add(this.north).project(camera);
+    // NDC has y up; the SVG turns clockwise from up with y down.
+    const angle = Math.atan2(b.x - a.x, b.y - a.y);
+    if (Math.abs(angle - this.angle) < 1e-4) return;
+    this.angle = angle;
+    this.needle.setAttribute('transform', `rotate(${(angle * 180) / Math.PI})`);
+    this.label.setAttribute('x', (LABEL_R * Math.sin(angle)).toFixed(2));
+    this.label.setAttribute('y', (-LABEL_R * Math.cos(angle)).toFixed(2));
+  }
 }

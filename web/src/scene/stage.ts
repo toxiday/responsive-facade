@@ -5,7 +5,7 @@ import { Scene, Vector2, type Group, type Object3D } from 'three';
 import type { Manifest, Side } from '../data/manifest';
 import { FacadeMesh } from '../facade/facadeMesh';
 import { createViewRig, type ViewRig } from './camera';
-import { createCompass } from './compass';
+import { Compass } from './compass';
 import { Cutaway } from './cutaway';
 import { EdgePass, withEdges } from './edges';
 import { buildFurniture } from './furniture';
@@ -27,6 +27,7 @@ export class Stage {
   readonly heatmap: Heatmap;
   readonly cutaway: Cutaway;
   readonly edges = new EdgePass();
+  readonly compass: Compass;
   private dirty = true;
   private frames = 0;
   onFrame: (() => void) | null = null;
@@ -54,8 +55,8 @@ export class Stage {
       this.sun.light.target,
       this.sun.sky,
       this.heatmap.mesh,
-      createCompass(room),
     );
+    this.compass = new Compass(host.parentElement ?? document.body, room.north_angle);
 
     // Linework on the shell, the furniture and the opaque facade panels.
     withEdges(this.shell.group);
@@ -118,6 +119,7 @@ export class Stage {
     if (!this.dirty && !moving) return;
     this.dirty = false;
     this.cutaway.update(this.rig.camera, this.rig.target);
+    this.compass.update(this.rig.camera, this.rig.target);
     this.renderer.render(this.scene, this.rig.camera);
     this.edges.render(this.renderer, this.scene, this.rig.camera);
     this.frames++;
