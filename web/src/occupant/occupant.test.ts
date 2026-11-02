@@ -27,8 +27,8 @@ function walk(c: OccupantController, t: Target): string[] {
   const seen: string[] = [];
   c.onState = (id) => seen.push(id);
   expect(c.goTo(t)).toBe(true);
-  for (let i = 0; i < 3600 && c.mode === 'walking'; i++) c.update(1 / 60);
-  expect(c.mode).not.toBe('walking');
+  for (let i = 0; i < 3600 && c.moving; i++) c.update(1 / 60);
+  expect(c.moving).toBe(false);
   return seen;
 }
 
@@ -56,6 +56,62 @@ describe('walk grid', () => {
       expect(t.stateId).toBe(s.id);
       if (t.kind === 'seat') expect(grid.isFree(t.approach)).toBe(true);
     }
+  });
+});
+
+describe('sitting down', () => {
+  const box = (id: string) => item(id).bbox;
+  /** True if the segment a–b passes through the rectangle. */
+  const crosses = (a: Pt, b: Pt, [x0, y0, x1, y1]: number[]) => {
+    for (let k = 0; k <= 50; k++) {
+      const x = a.x + ((b.x - a.x) * k) / 50;
+      const y = a.y + ((b.y - a.y) * k) / 50;
+      if (x > x0! && x < x1! && y > y0! && y < y1!) return true;
+    }
+    return false;
+  };
+
+  it('sits on the sofa from between it and the coffee table', () => {
+    const t = stateTarget(manifest, grid, 'couch_relax')! as Extract<Target, { kind: 'seat' }>;
+    const [, , sofaFront] = item('sofa').footprint[0]!;
+    const [tableX] = box('coffee_table');
+    expect(t.approach.x).toBeGreaterThan(sofaFront!);
+    expect(t.approach.x).toBeLessThan(tableX!);
+    expect(crosses(t.approach, t.at, box('coffee_table'))).toBe(false);
+    // ...and the walk there does not cut across the coffee table either.
+    const path = grid.path(entry, t.approach)!;
+    for (let k = 1; k < path.length; k++)
+      expect(crosses(path[k - 1]!, path[k]!, box('coffee_table'))).toBe(false);
+  });
+
+  it('gets onto the chaise from its open side, not along it', () => {
+    const t = stateTarget(manifest, grid, 'lounger_relax')! as Extract<Target, { kind: 'seat' }>;
+    const [, , front] = item('sofa').footprint[0]!;
+    const [, , chaiseEnd, chaiseTop] = item('sofa').footprint[1]!;
+    expect(t.approach.x).toBeGreaterThan(front!);
+    expect(t.approach.x).toBeLessThan(chaiseEnd!);
+    expect(t.approach.y).toBeGreaterThan(chaiseTop!);
+    expect(crosses(t.approach, t.at, box('coffee_table'))).toBe(false);
+  });
+
+  it('sits in the armchairs from in front, short of the window table', () => {
+    for (const id of ['lounge_read_w', 'lounge_read_e']) {
+      const t = stateTarget(manifest, grid, id)! as Extract<Target, { kind: 'seat' }>;
+      expect(crosses(t.approach, t.at, box('window_table')), id).toBe(false);
+      expect(Math.hypot(t.approach.x - t.at.x, t.approach.y - t.at.y), id).toBeLessThan(0.8);
+    }
+  });
+
+  it('turns to face the seat and lowers onto it', () => {
+    const c = new OccupantController(manifest, grid, entry, 'ambient');
+    const t = stateTarget(manifest, grid, 'couch_relax')!;
+    c.goTo(t);
+    while (c.mode === 'walking') c.update(1 / 60);
+    expect(c.mode).toBe('sitting');
+    while (c.moving) c.update(1 / 60);
+    expect(c.mode).toBe('seated');
+    expect(c.pos).toEqual(t.at);
+    expect(c.heading).toBeCloseTo(0, 6);
   });
 });
 

@@ -62,6 +62,12 @@ function appShots() {
     ['app-occupant-range', q('cooking_range', '11:30')],
     ['app-occupant-dining', q('dining', '12:30')],
     ['app-occupant-walking', q('ambient', '11:30'), `window.__rf.app.goToState('dining')`],
+    // Walking from the entry to sit on the sofa, seen from above.
+    ...[2, 3.5, 4.5, 5.2, 5.8, 7].map((sec) => [
+      `app-sofa-walk-${String(sec).replace('.', '_')}s`,
+      '?city=houston&month=12&slot=11:30&cam=top',
+      `(window.__rf.app.goToState('couch_relax'), window.__rf.app.advance(${sec}))`,
+    ]),
     ['app-flip-mid', q('couch_relax', '10:30'), () => window.__rf.app.previewAt({ slot: 3 }, 450)],
     // The curtain: TV (mostly closed) to cooking (mostly open) raises; back again drops.
     ...[0, 250, 500, 750].flatMap((ms) => [

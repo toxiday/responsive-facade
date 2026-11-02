@@ -13,8 +13,17 @@ const SEAT_HEIGHT: Record<string, number> = {
   chair: 0.47,
   stool: 0.65,
 };
-/** Seats approached from the front; chairs and stools tuck under a table, so from behind. */
-const FROM_FRONT = new Set(['sectional', 'armchair']);
+/**
+ * Where the occupant stands before sitting, relative to the seat (front, left), in metres. In
+ * front for the sofa and armchairs (so, for the sofa, between it and the coffee table); beside
+ * the chaise, at its open side; behind chairs and stools, which tuck under a table. The nearest
+ * free point to that spot is used.
+ */
+function stepSpot(type: string, pose: string): [number, number] {
+  if (pose === 'recline') return [0.65, 0.45];
+  if (type === 'sectional' || type === 'armchair') return [0.55, 0];
+  return [-0.45, 0];
+}
 
 export interface SeatTarget {
   kind: 'seat';
@@ -22,7 +31,7 @@ export interface SeatTarget {
   seat: Seat;
   activity: Activity;
   at: Pt;
-  /** The free point the occupant walks to before stepping onto the seat. */
+  /** The free point the occupant walks to before sitting down onto the seat. */
   approach: Pt;
   facing: number;
   /** Seat height (m); 0 for the standing spots at the kitchen counters. */
@@ -62,16 +71,18 @@ export function seatTarget(
   const stateId = activity.states[tv && activity.states.length > 1 ? 1 : 0]!;
   const at = { x: seat.x, y: seat.y };
   const height = SEAT_HEIGHT[item.type] ?? 0;
-  let approach: Pt | null = null;
-  if (height === 0 && grid.isFree(at)) approach = at;
+  let approach: Pt;
+  if (height === 0)
+    approach = grid.nearestFree(at)!; // the kitchen spots are stood at
   else {
-    const a = ((seat.facing + (FROM_FRONT.has(item.type) ? 0 : 180)) * Math.PI) / 180;
-    for (let d = 0.2; d <= 1.6 && !approach; d += 0.05) {
-      const p = { x: at.x + d * Math.cos(a), y: at.y + d * Math.sin(a) };
-      if (grid.isFree(p)) approach = p;
-    }
+    const [front, left] = stepSpot(item.type, activity.pose);
+    const a = (seat.facing * Math.PI) / 180;
+    const [c, s] = [Math.cos(a), Math.sin(a)];
+    approach = grid.nearestFree({
+      x: at.x + front * c - left * s,
+      y: at.y + front * s + left * c,
+    })!;
   }
-  approach ??= grid.nearestFree(at)!;
   return { kind: 'seat', item, seat, activity, at, approach, facing: seat.facing, height, stateId };
 }
 

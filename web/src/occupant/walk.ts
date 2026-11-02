@@ -1,17 +1,24 @@
 // Where the occupant can walk (guidelines §3.6): a 5 cm grid over the room. A cell is free if
 // a body disc centred there clears the walls and every obstacle's footprint: BODY_R (the same
-// 0.25 m the bake used to place the standing positions) from walls and fixed pieces, but only
-// MOVABLE_R from chairs and stools, which people push aside. At 0.25 m all round, the chairs
-// around the dining table, the desk chair and the stools seal off the counter, the desk and
-// five standing positions (gaps of 0.37–0.40 m). Paths are A* on the grid (8-connected,
+// 0.25 m the bake used to place the standing positions) from walls and tall fixed pieces;
+// LOW_R from the low, soft ones (sofa, armchairs, coffee and side tables), which you brush past
+// at knee height; and MOVABLE_R from chairs and stools, which people push aside. At 0.25 m all
+// round, the chairs around the dining table, the desk chair and the stools seal off the
+// counter, the desk and five standing positions (gaps of 0.37–0.40 m), and there is no way in
+// between the sofa and the coffee table (0.42 m), so the occupant would sit down from the far
+// side of the table. Paths are A* on the grid (8-connected,
 // octile distance), then pulled straight wherever the line between two points stays free.
 
 import type { FurnitureItem, Room } from '../data/manifest';
 
 export const CELL = 0.05;
 export const BODY_R = 0.25;
+export const LOW_R = 0.15;
 export const MOVABLE_R = 0.12;
+const LOW = new Set(['sectional', 'armchair', 'coffee_table', 'round_table']);
 const MOVABLE = new Set(['chair', 'stool']);
+const clearance = (type: string) =>
+  MOVABLE.has(type) ? MOVABLE_R : LOW.has(type) ? LOW_R : BODY_R;
 
 export interface Pt {
   x: number;
@@ -83,7 +90,7 @@ export class WalkGrid {
       .filter((f) => f.obstacle)
       .flatMap((f) =>
         (f.footprint.length ? f.footprint : [f.bbox]).map(
-          (r) => [r, MOVABLE.has(f.type) ? MOVABLE_R : BODY_R] as [Rect, number],
+          (r) => [r, clearance(f.type)] as [Rect, number],
         ),
       );
     for (let j = 0; j < this.ny; j++)

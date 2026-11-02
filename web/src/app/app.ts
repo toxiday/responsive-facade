@@ -162,6 +162,12 @@ export class App {
     if (t) this.walkTo(t);
   }
 
+  /** Scripted shots: move the occupant on by `seconds` at once, in 60 Hz steps. */
+  advance(seconds: number): void {
+    for (let i = 0; i < Math.round(seconds * 60); i++) this.tick(1 / 60);
+    this.stage.invalidate();
+  }
+
   /** Scripted shots: make a change and freeze the animation `ms` into it. */
   async previewAt(patch: Partial<Selection>, ms: number): Promise<void> {
     const t0 = performance.now();
@@ -182,11 +188,13 @@ export class App {
     const o = this.occupant;
     const moving = o.update(dt);
     const seat = o.seatedOn;
+    // Sitting down blends into the seated pose; standing up into the standing one.
+    const pose = o.mode === 'sitting' ? 'seated' : o.mode === 'rising' ? 'standing' : o.mode;
     const posing = this.figure.update(
       dt,
       o.pos,
       o.heading,
-      o.mode,
+      pose,
       seat ? { height: seat.height, pose: seat.activity.pose } : null,
       o.walked,
     );
@@ -252,7 +260,7 @@ export class App {
     const city = this.cities.find((c) => c.id === this.sel.city)!;
     const dest = this.occupant.destination;
     const walking =
-      this.occupant.mode === 'walking' && dest
+      this.occupant.moving && dest
         ? dest.kind === 'seat'
           ? (this.manifest.states.find((s) => s.id === dest.stateId)?.label ?? dest.stateId)
           : 'a spot on the floor'
