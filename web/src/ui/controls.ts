@@ -27,7 +27,7 @@ export interface Selection {
   layer: Layer;
   /** Show the conventional facade instead of the responsive one. */
   compare: boolean;
-  /** Hold the facade while the occupant walks; it changes once they arrive. */
+  /** Hold the facade while the occupant walks; it changes once they arrive (on by default). */
   hold: boolean;
   /** The occupant follows the daily schedule (on unless turned off). */
   schedule: boolean;

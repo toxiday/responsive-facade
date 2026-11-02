@@ -85,7 +85,11 @@ function appShots() {
     ['app-occupant-reading', q('lounge_read_w', '11:30')],
     ['app-occupant-range', q('cooking_range', '11:30')],
     ['app-occupant-dining', q('dining', '12:30')],
-    ['app-occupant-walking', q('ambient', '11:30'), `window.__rf.app.goToState('dining')`],
+    [
+      'app-occupant-walking',
+      q('ambient', '11:30', '&hold=0'),
+      `window.__rf.app.goToState('dining')`,
+    ],
     // "Hold until they arrive": mid-walk the facade has not moved; on arrival it has.
     ...[
       ['walking', 2],

@@ -1,11 +1,13 @@
 // The demo. Pick a city, a baked day and an hour; click anywhere in the room and the occupant
 // walks there (M4): a piece of furniture takes its nearest seat, open floor a standing spot.
-// The facade chases them as they walk and settles on the seat's activity when they arrive (or,
-// with "Hold until they arrive", keeps its state for the whole walk); on the sofa, clicking the
+// By default the facade keeps its state while they walk and changes once they arrive ("Hold
+// until they arrive", Tony); unticked, it chases them as they walk. On the sofa, clicking the
 // TV turns it on and off. The "Go to" list walks them to an activity. The conventional facade
 // can be shown instead for comparison. Changes play as a curtain. Time runs on by itself, 5 s a
-// baked hour with a 10 s night between days, unless frozen (clock.ts). The selection lives in
-// the URL, so a view can be linked (and shot by scripts/shoot.mjs).
+// baked hour with a 10 s night between days, unless frozen (clock.ts). The demo always opens at
+// 08:30 (Tony), or the first baked hour after it; only a frozen link (?freeze=1) opens at its
+// own ?slot=. The selection lives in the URL, so a view can be linked (and shot by
+// scripts/shoot.mjs).
 //
 // By default the occupant follows a daily schedule (schedule.ts), starting at the hour's
 // activity; a click, the "Go to" list or the TV takes over from it, and the box unticks. With
@@ -33,6 +35,8 @@ const LAYER_IDS: Layer[] = ['none', 'radiance', 'surrogate'];
 /** A few steps in from the entry door, clear of the open door leaf, facing into the room. */
 const ENTRY: Pt = { x: 4.75, y: 8.8 };
 const ENTRY_HEADING = 225;
+/** The hour the demo opens at (Tony): this, or the first baked hour after it. */
+const OPENING_HOUR = '08:30';
 /** Allowance for turning on the spot when the schedule times a walk. */
 const TURN_S = 0.3;
 
@@ -132,14 +136,16 @@ export class App {
       state: 'ambient',
       layer: layer && LAYER_IDS.includes(layer) ? layer : 'none',
       compare: params.get('compare') === '1' || params.get('state') === 'baseline',
-      hold: params.get('hold') === '1',
+      hold: params.get('hold') !== '0',
       freeze: params.get('freeze') === '1',
       schedule: params.get('schedule') !== '0',
     };
     this.data = await this.store.get(this.sel.city, this.sel.month);
-    const wanted = params.get('slot');
-    const byLabel = this.data.meta.slots.findIndex((s) => s.label === wanted);
-    this.sel.slot = byLabel >= 0 ? byLabel : this.highestSun(this.data);
+    const slots = this.data.meta.slots;
+    const wanted = this.sel.freeze ? params.get('slot') : null;
+    const byLabel = slots.findIndex((s) => s.label === wanted);
+    const opening = slots.findIndex((s) => s.label >= OPENING_HOUR);
+    this.sel.slot = byLabel >= 0 ? byLabel : Math.max(0, opening);
     // On schedule, the occupant starts at the hour's activity; off it, a linked state puts them
     // straight there.
     const linked = this.sel.schedule
@@ -470,11 +476,13 @@ export class App {
     q.set('slot', this.data!.meta.slots[this.sel.slot]!.label);
     q.set('state', this.sel.state);
     q.set('layer', this.sel.layer);
-    for (const flag of ['compare', 'hold', 'freeze'] as const)
+    for (const flag of ['compare', 'freeze'] as const)
       if (this.sel[flag]) q.set(flag, '1');
       else q.delete(flag);
-    if (this.sel.schedule) q.delete('schedule');
-    else q.set('schedule', '0');
+    for (const flag of ['hold', 'schedule'] as const)
+      // on unless the link says 0
+      if (this.sel[flag]) q.delete(flag);
+      else q.set(flag, '0');
     history.replaceState(null, '', `?${q}`);
   }
 }
