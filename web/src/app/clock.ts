@@ -10,6 +10,9 @@ export const FADE_S = 1.5;
 
 const ease = (t: number) => t * t * (3 - 2 * t);
 
+/** Length of the day on the time bar, in hours: the baked hours, then the night. */
+export const barHours = (nSlots: number) => nSlots + NIGHT_S / HOUR_S;
+
 export class DayClock {
   /** False while time is frozen. */
   running = true;
@@ -22,6 +25,15 @@ export class DayClock {
   /** Daylight for the lights: 1 by day, 0 at night, eased in between. */
   get daylight(): number {
     return ease(this.level);
+  }
+
+  /**
+   * Where the time bar's thumb is, in hours from the first baked one: the hour shown plus how
+   * far it has run, so it reaches the next hour's line as the clock moves on; after the last
+   * hour, on into the night.
+   */
+  position(slot: number, nSlots: number): number {
+    return (this.night ? nSlots : slot) + this.t / HOUR_S;
   }
 
   /** Show the current hour afresh (the visitor picked one, or unfroze time); ends a night. */

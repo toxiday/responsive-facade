@@ -54,6 +54,8 @@ function appShots() {
     ['app-night', '?city=houston&month=12', lastHourThen(8)],
     ['app-night-tv', q('couch_tv', '16:30'), lastHourThen(8)],
     ['app-night-morning', '?city=houston&month=12', lastHourThen(18)],
+    // Time running: the thumb partway from one hour's line to the next.
+    ['app-timebar-mid', '?city=houston&month=12&slot=11:30', 'window.__rf.app.advance(2.5)'],
   ];
   const frozen = [
     ['app-ambient', '?'],

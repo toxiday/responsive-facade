@@ -4,6 +4,7 @@
   --muted: #6b6566;
   --accent: #ec008c;
   --panel: rgba(255, 255, 255, 0.86);
+  --timebar-h: 52px;
   color-scheme: light;
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
@@ -137,25 +138,6 @@ body.night .compass {
   color: var(--ink);
 }
 
-/* The slider full width; the time and the Freeze box on a line under it. */
-.time {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 2px 8px;
-}
-
-.time .slider {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin: 0;
-  accent-color: var(--accent);
-}
-
-.time-label {
-  font-variant-numeric: tabular-nums;
-}
-
 .seg {
   display: flex;
   border: 1px solid #cfcac3;
@@ -225,10 +207,118 @@ body.night .compass {
   font-size: 11px;
 }
 
+/* Above the time bar. */
 .readout {
   left: 12px;
-  bottom: 12px;
+  bottom: calc(var(--timebar-h) + 20px);
   max-width: 27rem;
+}
+
+/* The time bar (ui/timebar.ts): bottom centre, as wide as the page allows. A light line at each
+   baked hour, the night dark at the end; the thumb glides along as time runs. */
+.timebar {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(920px, calc(100vw - 24px));
+  height: var(--timebar-h);
+  display: grid;
+  grid-template-columns: 5.4em 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.tb-time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tb-track {
+  position: relative;
+  height: 34px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.tb-track:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.tb-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 10px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #dcd7d0;
+}
+
+.tb-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+
+.tb-night {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  background: #2b2e35;
+}
+
+.tb-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tb-mark {
+  position: absolute;
+  top: 5px;
+  width: 1px;
+  height: 14px;
+  margin-left: -0.5px;
+  background: rgba(35, 31, 32, 0.28);
+}
+
+.tb-mark span,
+.tb-night-label {
+  position: absolute;
+  top: 17px;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-night-label {
+  top: 22px;
+}
+
+.tb-thumb {
+  position: absolute;
+  top: 12px;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
 
 .readout .big {
@@ -270,7 +360,20 @@ body.night .compass {
   color: var(--muted);
 }
 
+/* Once the time bar reaches the corners, the north arrow sits above it too. */
+@media (max-width: 1100px) {
+  .compass {
+    bottom: calc(var(--timebar-h) + 20px);
+  }
+}
+
 @media (max-width: 720px) {
+  .timebar {
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    padding: 0 10px;
+  }
+
   .panel {
     left: 12px;
     right: 12px;

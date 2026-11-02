@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DayClock, FADE_S, HOUR_S, NIGHT_S } from './clock';
+import { barHours, DayClock, FADE_S, HOUR_S, NIGHT_S } from './clock';
 
 /** Run the clock for `seconds` in 60 Hz steps from `slot`; returns the slot it ends on. */
 function run(c: DayClock, seconds: number, slot: number, n: number): number {
@@ -30,6 +30,24 @@ describe('day clock', () => {
     expect(c.daylight).toBeLessThan(1);
     run(c, FADE_S / 2, slot, 5);
     expect(c.daylight).toBe(1);
+  });
+
+  it('glides the time bar thumb on without a jump, through the night and back to the start', () => {
+    const c = new DayClock();
+    const n = 3;
+    let slot = 0;
+    let last = c.position(slot, n);
+    let wrapped = 0;
+    for (let i = 0; i < Math.round((n * HOUR_S + NIGHT_S + 1) * 60); i++) {
+      slot = c.update(1 / 60, slot, n) ?? slot;
+      const at = c.position(slot, n);
+      if (at < last) wrapped++;
+      else expect(at - last).toBeLessThan(0.01);
+      last = at;
+    }
+    expect(wrapped).toBe(1); // only at the morning, from the end of the night to the start
+    expect(slot).toBe(0);
+    expect(barHours(n)).toBe(n + NIGHT_S / HOUR_S);
   });
 
   it('stands still while frozen', () => {

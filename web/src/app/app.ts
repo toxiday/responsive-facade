@@ -21,6 +21,7 @@ import { withEdges } from '../scene/edges';
 import { Stage } from '../scene/stage';
 import { Controls, type CityChoice, type Choice, type Selection } from '../ui/controls';
 import { Readout } from '../ui/readout';
+import { TimeBar } from '../ui/timebar';
 import { DayClock } from './clock';
 import { showRecord, type Layer, type RecordView } from './record';
 
@@ -40,6 +41,9 @@ export class App {
   private readonly cities: CityChoice[];
   private readonly raycaster = new Raycaster();
   private readonly clock = new DayClock();
+  private readonly timebar: TimeBar;
+  /** The hour the clock is on: the slot shown, or the next one while its set() is pending. */
+  private hour = 0;
   /** The daylight level and night as last put on the stage. */
   private daylight = 1;
   private night = false;
@@ -87,11 +91,15 @@ export class App {
     this.readout = new Readout(ui);
     this.controls.onChange = (patch) => {
       if (patch.state !== undefined) return this.goToState(patch.state);
-      if (patch.hold !== undefined || patch.freeze !== undefined)
-        return void this.setOptions(patch);
-      if (patch.slot !== undefined) this.clock.restart();
+      if (patch.hold !== undefined) return void this.setOptions(patch);
       void this.set(patch);
     };
+    this.timebar = new TimeBar(ui);
+    this.timebar.onPick = (slot) => {
+      this.clock.restart();
+      void this.set({ slot });
+    };
+    this.timebar.onFreeze = (freeze) => void this.setOptions({ freeze });
     addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).closest('select, input')) return;
       const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
@@ -117,7 +125,6 @@ export class App {
       hold: params.get('hold') === '1',
       freeze: params.get('freeze') === '1',
     };
-    this.clock.running = !this.sel.freeze;
     this.data = await this.store.get(this.sel.city, this.sel.month);
     const wanted = params.get('slot');
     const byLabel = this.data.meta.slots.findIndex((s) => s.label === wanted);
@@ -152,8 +159,8 @@ export class App {
 
   /**
    * The options that change no view. Hold: the facade keeps its state while the occupant walks,
-   * or chases them again from their next step. Freeze: the clock stops on the hour shown, or
-   * runs on from the start of it; frozen at night, the day starts. Otherwise nothing is
+   * or chases them again from their next step. Freeze: the clock stops at the start of the
+   * hour shown, or runs on from there; frozen at night, the day starts. Otherwise nothing is
    * redrawn, so a curtain already moving finishes as it was.
    */
   setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze'>>): Promise<void> {
@@ -161,14 +168,14 @@ export class App {
       this.sel = { ...this.sel, ...patch };
       if (patch.freeze !== undefined) {
         const wasNight = this.clock.night;
-        this.clock.running = !patch.freeze;
-        if (!patch.freeze || wasNight) this.clock.restart();
+        this.clock.restart();
         if (wasNight) {
           this.sel.slot = 0;
           return this.render(true);
         }
       }
-      this.controls.show(this.sel, this.data!.meta.slots, this.clock.night);
+      this.controls.show(this.sel);
+      this.showTime();
       this.refreshReadout();
       this.syncUrl();
     });
@@ -227,8 +234,15 @@ export class App {
   private step(dt: number): boolean {
     let busy = false;
     if (this.data) {
-      const next = this.clock.update(dt, this.sel.slot, this.data.nSlots);
-      if (next !== null) void this.set({ slot: next });
+      const n = this.data.nSlots;
+      // The clock waits while the time bar's thumb is held.
+      this.clock.running = !this.sel.freeze && !this.timebar.dragging;
+      const next = this.clock.update(dt, this.hour, n);
+      if (next !== null) {
+        this.hour = next;
+        void this.set({ slot: next });
+      }
+      this.timebar.setPosition(this.clock.position(this.hour, n));
       // Nightfall dims the room; the morning comes with the first hour's set() above.
       if (this.clock.night !== this.night) {
         this.night = this.clock.night;
@@ -245,12 +259,18 @@ export class App {
     return this.tick(dt) || busy;
   }
 
-  /** Night: no heatmap (there is no baked hour), and the panel and readout say so. */
+  /** Night: no heatmap (there is no baked hour), and the time bar and readout say so. */
   private showNight(): void {
     this.stage.heatmap.mesh.visible = false;
-    this.controls.show(this.sel, this.data!.meta.slots, true);
+    this.showTime();
     this.refreshReadout();
     this.stage.invalidate();
+  }
+
+  private showTime(): void {
+    const data = this.data!;
+    this.timebar.show(this.sel.slot, data.meta.slots, this.clock.night, this.sel.freeze);
+    this.timebar.setPosition(this.clock.position(this.hour, data.nSlots));
   }
 
   private tick(dt: number): boolean {
@@ -358,7 +378,9 @@ export class App {
       this.stage.zones.set(this.manifest.states.find((s) => s.id === this.sel.state) ?? null);
     }
     if (this.clock.night) this.stage.heatmap.mesh.visible = false;
-    this.controls.show(this.sel, data.meta.slots, this.clock.night);
+    this.hour = this.sel.slot;
+    this.controls.show(this.sel);
+    this.showTime();
     this.refreshReadout();
     this.syncUrl();
   }

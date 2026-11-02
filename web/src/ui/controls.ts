@@ -1,12 +1,9 @@
-// The control panel: city, baked day, time (snapping to the baked hours; it runs on by itself
-// unless frozen, and reads "Night" between days), where the occupant
-// goes (each activity; the list reads "Standing" while they are on open floor), whether the
-// facade holds still until they arrive, the conventional facade for comparison, and the heatmap layer with its legend. Only city-months
-// that have data are offered.
+// The control panel: city and baked day, where the occupant goes (each activity; the list reads
+// "Standing" while they are on open floor), whether the facade holds still until they arrive,
+// the conventional facade for comparison, and the heatmap layer with its legend. Only
+// city-months that have data are offered. The time is on the bar along the bottom (timebar.ts).
 
 import type { Legend } from '../data/manifest';
-import type { SlotMeta } from '../data/month';
-import { HOUR_S, NIGHT_S } from '../app/clock';
 import type { Layer } from '../app/record';
 
 export const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
@@ -31,7 +28,7 @@ export interface Selection {
   compare: boolean;
   /** Hold the facade while the occupant walks; it changes once they arrive. */
   hold: boolean;
-  /** Stop the clock (app/clock.ts) on the hour being shown. */
+  /** Stop the clock (app/clock.ts) at the start of the hour being shown. */
   freeze: boolean;
 }
 
@@ -41,7 +38,7 @@ const LAYERS: [Layer, string][] = [
   ['surrogate', 'Surrogate'],
 ];
 
-function el<K extends keyof HTMLElementTagNameMap>(
+export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},
   text = '',
@@ -84,15 +81,11 @@ export class Controls {
   onChange: (patch: Partial<Selection>) => void = () => {};
   private readonly city: HTMLSelectElement;
   private readonly month: HTMLSelectElement;
-  private readonly slot: HTMLInputElement;
-  private readonly time: HTMLOutputElement;
   private readonly state: HTMLSelectElement;
   private readonly compare: HTMLInputElement;
   private readonly hold: HTMLInputElement;
-  private readonly freeze: HTMLInputElement;
   private readonly layers = new Map<Layer, HTMLButtonElement>();
   private readonly legend: HTMLElement;
-  private slots: SlotMeta[] = [];
 
   constructor(
     parent: HTMLElement,
@@ -116,23 +109,6 @@ export class Controls {
 
     this.month = el('select', { 'aria-label': 'Day' });
     this.month.addEventListener('change', () => this.onChange({ month: Number(this.month.value) }));
-
-    this.slot = el('input', {
-      type: 'range',
-      class: 'slider',
-      min: '0',
-      step: '1',
-      'aria-label': 'Time of day',
-    });
-    this.slot.addEventListener('input', () => this.onChange({ slot: Number(this.slot.value) }));
-    this.time = el('output', { class: 'time-label' });
-    this.freeze = el('input', { type: 'checkbox' });
-    this.freeze.addEventListener('change', () => this.onChange({ freeze: this.freeze.checked }));
-    const freezeLabel = el('label', {
-      class: 'check',
-      title: `Unfrozen, each hour shows for ${HOUR_S} s, then a ${NIGHT_S} s night`,
-    });
-    freezeLabel.append(this.freeze, el('span', {}, 'Freeze'));
 
     this.state = el('select', { 'aria-label': 'Go to' });
     const standing = el('option', { value: '', disabled: '', hidden: '' }, 'Standing');
@@ -164,12 +140,9 @@ export class Controls {
       r.append(el('span', { class: 'row-label' }, label), ...kids);
       return r;
     };
-    const timeBox = el('div', { class: 'time' });
-    timeBox.append(this.slot, this.time, freezeLabel);
     this.el.append(
       head,
       row('Place', this.city, this.month),
-      row('Time', timeBox),
       row('Go to', this.state),
       row('Facade', holdLabel),
       row('Compare', compareLabel),
@@ -179,8 +152,8 @@ export class Controls {
     parent.append(this.el);
   }
 
-  /** Reflect the current selection (and the hours of the day being shown, or the night). */
-  show(sel: Selection, slots: SlotMeta[], night = false): void {
+  /** Reflect the current selection. */
+  show(sel: Selection): void {
     this.city.value = sel.city;
     const c = this.cities.find((x) => x.id === sel.city)!;
     this.month.replaceChildren(
@@ -189,21 +162,11 @@ export class Controls {
       ),
     );
     this.month.value = String(sel.month);
-    this.slots = slots;
-    this.slot.max = String(slots.length - 1);
-    this.slot.value = String(sel.slot);
-    const s = slots[sel.slot]!;
-    this.time.textContent = night ? 'Night' : `${s.label} LST`;
-    this.freeze.checked = sel.freeze;
     const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
     this.state.value = listed ? sel.state : '';
     this.hold.checked = sel.hold;
     this.compare.checked = sel.compare;
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
     this.legend.hidden = sel.layer === 'none';
-  }
-
-  get slotCount(): number {
-    return this.slots.length;
   }
 }
