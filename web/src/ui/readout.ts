@@ -18,13 +18,23 @@ export class Readout {
     parent.append(this.el);
   }
 
-  show(manifest: Manifest, view: RecordView, city: string, month: number, day: number): void {
+  /** `walking`: where the occupant is headed, while they walk (the facade chases them). */
+  show(
+    manifest: Manifest,
+    view: RecordView,
+    city: string,
+    month: number,
+    day: number,
+    walking: string | null = null,
+  ): void {
     const r = reading(manifest, view);
     const m = view.metrics;
     const label =
       view.stateId === 'baseline'
         ? 'Conventional facade (baseline)'
-        : (view.state?.label ?? view.stateId);
+        : walking
+          ? `Walking to ${walking.charAt(0).toLowerCase()}${walking.slice(1)}`
+          : (view.state?.label ?? view.stateId);
     const where = r?.where === 'floor' ? 'floor median' : 'at the occupant';
     const facade =
       view.ship === 'baseline'

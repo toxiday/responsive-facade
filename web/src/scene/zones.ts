@@ -11,6 +11,8 @@ import { PALETTE } from './materials';
 
 export class ZoneMarks {
   readonly group = new Group();
+  /** The occupant dot; off once a figure stands there instead (the app). */
+  showDot = true;
   private readonly dot: Mesh;
 
   constructor(private readonly room: Room) {
@@ -34,6 +36,6 @@ export class ZoneMarks {
     this.group.add(maskOutline(this.room, mask, z + 0.004));
     const occ = state.zones[0]!;
     roomToThree(occ.x, occ.y, z + 0.006, this.dot.position);
-    this.group.add(this.dot);
+    if (this.showDot) this.group.add(this.dot);
   }
 }

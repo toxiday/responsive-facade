@@ -53,6 +53,15 @@ function appShots() {
     ['app-desk-1130', q('desk', '11:30')],
     ['app-couch_tv-1630', q('couch_tv', '16:30')],
     ['app-baseline-radiance', q('baseline', '11:30', '&layer=radiance')],
+    // The occupant (M4): where they start, the activity poses, standing, and mid-walk.
+    ['app-occupant-entry', '?city=houston&month=12&slot=11:30'],
+    ['app-occupant-desk', q('desk', '11:30')],
+    ['app-occupant-tv', q('couch_tv', '15:30')],
+    ['app-occupant-chaise', q('lounger_relax', '11:30')],
+    ['app-occupant-reading', q('lounge_read_w', '11:30')],
+    ['app-occupant-range', q('cooking_range', '11:30')],
+    ['app-occupant-dining', q('dining', '12:30')],
+    ['app-occupant-walking', q('ambient', '11:30'), `window.__rf.app.goToState('dining')`],
     ['app-flip-mid', q('couch_relax', '10:30'), () => window.__rf.app.previewAt({ slot: 3 }, 450)],
     // The curtain: TV (mostly closed) to cooking (mostly open) raises; back again drops.
     ...[0, 250, 500, 750].flatMap((ms) => [

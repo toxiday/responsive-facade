@@ -272,6 +272,11 @@ export class FacadeMesh {
     this.flipStart = now;
   }
 
+  /** True while a change is still playing. */
+  get animating(): boolean {
+    return this.flips.length > 0;
+  }
+
   /** Advance the moving panels to `now` (ms); true while the facade still needs frames. */
   tick(now: number): boolean {
     if (!this.flips.length) return false;

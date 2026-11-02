@@ -35,6 +35,9 @@ export class Stage {
   readonly zones: ZoneMarks;
   /** Clock for the facade animation (ms); null = real time. Scripted shots freeze it. */
   timeOverride: number | null = null;
+  /** Per-frame updates (the occupant); each returns true while it still needs frames. */
+  readonly tickers: ((dt: number) => boolean)[] = [];
+  private lastTick = performance.now();
   readonly cutaway: Cutaway;
   readonly edges = new EdgePass();
   readonly compass: Compass;
@@ -138,8 +141,13 @@ export class Stage {
   private loop = (): void => {
     requestAnimationFrame(this.loop);
     const moving = this.rig.controls.update();
+    const t = performance.now();
+    const dt = Math.min(0.1, (t - this.lastTick) / 1000);
+    this.lastTick = t;
+    let busy = false;
+    for (const tick of this.tickers) busy = tick(dt) || busy;
     const turning = this.facade.tick(this.now());
-    if (!this.dirty && !moving && !turning) return;
+    if (!this.dirty && !moving && !turning && !busy) return;
     this.dirty = false;
     this.cutaway.update(this.rig.camera, this.rig.target);
     this.compass.update(this.rig.camera, this.rig.target);

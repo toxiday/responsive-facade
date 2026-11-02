@@ -27,6 +27,7 @@ export const PALETTE = {
   dark: new Color('#3b3a39'),
   steel: new Color('#b7b9ba'),
   added: new Color('#b9cfc6'),
+  figure: new Color('#e4dfd7'), // the occupant, a pale scale figure
   accent: new Color('#ec008c'), // presentation magenta: window outlines, debug overlays
 };
 

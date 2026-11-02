@@ -1,5 +1,7 @@
-// The control panel: city, baked day, time (snapping to the baked hours), activity, and the
-// heatmap layer with its legend. Only city-months that have data are offered.
+// The control panel: city, baked day, time (snapping to the baked hours), where the occupant
+// goes (each activity; the list reads "Standing" while they are on open floor), the
+// conventional facade for comparison, and the heatmap layer with its legend. Only city-months
+// that have data are offered.
 
 import type { Legend } from '../data/manifest';
 import type { SlotMeta } from '../data/month';
@@ -23,6 +25,8 @@ export interface Selection {
   slot: number;
   state: string;
   layer: Layer;
+  /** Show the conventional facade instead of the responsive one. */
+  compare: boolean;
 }
 
 const LAYERS: [Layer, string][] = [
@@ -77,6 +81,7 @@ export class Controls {
   private readonly slot: HTMLInputElement;
   private readonly time: HTMLOutputElement;
   private readonly state: HTMLSelectElement;
+  private readonly compare: HTMLInputElement;
   private readonly layers = new Map<Layer, HTMLButtonElement>();
   private readonly legend: HTMLElement;
   private slots: SlotMeta[] = [];
@@ -108,9 +113,16 @@ export class Controls {
     this.slot.addEventListener('input', () => this.onChange({ slot: Number(this.slot.value) }));
     this.time = el('output', { class: 'time-label' });
 
-    this.state = el('select', { 'aria-label': 'Activity' });
+    this.state = el('select', { 'aria-label': 'Go to' });
+    const standing = el('option', { value: '', disabled: '', hidden: '' }, 'Standing');
+    this.state.append(standing);
     for (const a of activities) this.state.append(el('option', { value: a.id }, a.label));
     this.state.addEventListener('change', () => this.onChange({ state: this.state.value }));
+
+    this.compare = el('input', { type: 'checkbox' });
+    this.compare.addEventListener('change', () => this.onChange({ compare: this.compare.checked }));
+    const compareLabel = el('label', { class: 'check' });
+    compareLabel.append(this.compare, el('span', {}, 'Conventional facade'));
 
     const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Heatmap' });
     for (const [id, label] of LAYERS) {
@@ -132,7 +144,8 @@ export class Controls {
       head,
       row('Place', this.city, this.month),
       row('Time', timeBox),
-      row('Activity', this.state),
+      row('Go to', this.state),
+      row('Compare', compareLabel),
       row('Heatmap', seg),
       this.legend,
     );
@@ -154,7 +167,9 @@ export class Controls {
     this.slot.value = String(sel.slot);
     const s = slots[sel.slot]!;
     this.time.textContent = `${s.label} LST`;
-    this.state.value = sel.state;
+    const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
+    this.state.value = listed ? sel.state : '';
+    this.compare.checked = sel.compare;
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
     this.legend.hidden = sel.layer === 'none';
   }
