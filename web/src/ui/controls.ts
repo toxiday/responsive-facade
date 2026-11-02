@@ -6,6 +6,7 @@
 
 import type { Legend } from '../data/manifest';
 import type { SlotMeta } from '../data/month';
+import { HOUR_S, NIGHT_S } from '../app/clock';
 import type { Layer } from '../app/record';
 
 export const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
@@ -129,7 +130,7 @@ export class Controls {
     this.freeze.addEventListener('change', () => this.onChange({ freeze: this.freeze.checked }));
     const freezeLabel = el('label', {
       class: 'check',
-      title: 'Unfrozen, each hour shows for 10 s, then a 10 s night',
+      title: `Unfrozen, each hour shows for ${HOUR_S} s, then a ${NIGHT_S} s night`,
     });
     freezeLabel.append(this.freeze, el('span', {}, 'Freeze'));
 

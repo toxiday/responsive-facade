@@ -3,7 +3,7 @@
 // The facade chases them as they walk and settles on the seat's activity when they arrive (or,
 // with "Hold until they arrive", keeps its state for the whole walk); on the sofa, clicking the TV turns it on and off. The "Go to" list walks them to an
 // activity. The conventional facade can be shown instead for comparison. Changes play as a
-// curtain. Time runs on by itself, 10 s a baked hour with a 10 s night between days, unless
+// curtain. Time runs on by itself, 5 s a baked hour with a 10 s night between days, unless
 // frozen (clock.ts). The selection lives in the URL, so a view can be linked (and shot by
 // scripts/shoot.mjs); a linked state puts the occupant straight there.
 //
