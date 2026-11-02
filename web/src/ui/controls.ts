@@ -1,6 +1,6 @@
 // The control panel: city, baked day, time (snapping to the baked hours), where the occupant
-// goes (each activity; the list reads "Standing" while they are on open floor), the
-// conventional facade for comparison, and the heatmap layer with its legend. Only city-months
+// goes (each activity; the list reads "Standing" while they are on open floor), whether the
+// facade holds still until they arrive, the conventional facade for comparison, and the heatmap layer with its legend. Only city-months
 // that have data are offered.
 
 import type { Legend } from '../data/manifest';
@@ -27,6 +27,8 @@ export interface Selection {
   layer: Layer;
   /** Show the conventional facade instead of the responsive one. */
   compare: boolean;
+  /** Hold the facade while the occupant walks; it changes once they arrive. */
+  hold: boolean;
 }
 
 const LAYERS: [Layer, string][] = [
@@ -82,6 +84,7 @@ export class Controls {
   private readonly time: HTMLOutputElement;
   private readonly state: HTMLSelectElement;
   private readonly compare: HTMLInputElement;
+  private readonly hold: HTMLInputElement;
   private readonly layers = new Map<Layer, HTMLButtonElement>();
   private readonly legend: HTMLElement;
   private slots: SlotMeta[] = [];
@@ -119,6 +122,11 @@ export class Controls {
     for (const a of activities) this.state.append(el('option', { value: a.id }, a.label));
     this.state.addEventListener('change', () => this.onChange({ state: this.state.value }));
 
+    this.hold = el('input', { type: 'checkbox' });
+    this.hold.addEventListener('change', () => this.onChange({ hold: this.hold.checked }));
+    const holdLabel = el('label', { class: 'check' });
+    holdLabel.append(this.hold, el('span', {}, 'Hold until they arrive'));
+
     this.compare = el('input', { type: 'checkbox' });
     this.compare.addEventListener('change', () => this.onChange({ compare: this.compare.checked }));
     const compareLabel = el('label', { class: 'check' });
@@ -145,6 +153,7 @@ export class Controls {
       row('Place', this.city, this.month),
       row('Time', timeBox),
       row('Go to', this.state),
+      row('Facade', holdLabel),
       row('Compare', compareLabel),
       row('Heatmap', seg),
       this.legend,
@@ -169,6 +178,7 @@ export class Controls {
     this.time.textContent = `${s.label} LST`;
     const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
     this.state.value = listed ? sel.state : '';
+    this.hold.checked = sel.hold;
     this.compare.checked = sel.compare;
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
     this.legend.hidden = sel.layer === 'none';

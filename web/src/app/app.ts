@@ -1,7 +1,7 @@
 // The demo. Pick a city, a baked day and an hour; click anywhere in the room and the occupant
 // walks there (M4): a piece of furniture takes its nearest seat, open floor a standing spot.
-// The facade chases them as they walk and settles on the seat's activity when they arrive;
-// on the sofa, clicking the TV turns it on and off. The "Go to" list walks them to an
+// The facade chases them as they walk and settles on the seat's activity when they arrive (or,
+// with "Hold until they arrive", keeps its state for the whole walk); on the sofa, clicking the TV turns it on and off. The "Go to" list walks them to an
 // activity. The conventional facade can be shown instead for comparison. Changes play as a
 // curtain. The selection lives in the URL, so a view can be linked (and shot by
 // scripts/shoot.mjs); a linked state puts the occupant straight there.
@@ -68,7 +68,7 @@ export class App {
     this.grid = new WalkGrid(manifest.room, manifest.furniture);
     const start = this.grid.nearestFree(ENTRY)!;
     this.occupant = new OccupantController(manifest, this.grid, start, 'ambient', ENTRY_HEADING);
-    this.occupant.canChase = () => !this.stage.facade.animating;
+    this.occupant.canChase = () => !this.sel.hold && !this.stage.facade.animating;
     this.occupant.onState = (id) => void this.set({ state: id });
     this.occupant.onArrive = () => this.refreshReadout();
     this.stage.scene.add(this.figure.group);
@@ -81,6 +81,7 @@ export class App {
     this.readout = new Readout(ui);
     this.controls.onChange = (patch) => {
       if (patch.state !== undefined) return this.goToState(patch.state);
+      if (patch.hold !== undefined) return this.setHold(patch.hold);
       void this.set(patch);
     };
     addEventListener('keydown', (e) => {
@@ -103,6 +104,7 @@ export class App {
       state: 'ambient',
       layer: layer && LAYER_IDS.includes(layer) ? layer : 'none',
       compare: params.get('compare') === '1' || params.get('state') === 'baseline',
+      hold: params.get('hold') === '1',
     };
     this.data = await this.store.get(this.sel.city, this.sel.month);
     const wanted = params.get('slot');
@@ -132,6 +134,20 @@ export class App {
       next.slot = Math.min(this.data!.nSlots - 1, Math.max(0, next.slot));
       this.sel = next;
       this.render(true);
+    });
+    return this.pending;
+  }
+
+  /**
+   * Hold the facade while the occupant walks, or let it chase them again (from their next
+   * step). Nothing is redrawn, so a curtain already moving finishes as it was.
+   */
+  setHold(hold: boolean): Promise<void> {
+    this.pending = this.pending.then(() => {
+      this.sel = { ...this.sel, hold };
+      this.controls.show(this.sel, this.data!.meta.slots);
+      this.refreshReadout();
+      this.syncUrl();
     });
     return this.pending;
   }
@@ -272,6 +288,7 @@ export class App {
       this.sel.month,
       this.data.meta.day,
       walking,
+      walking !== null && this.sel.hold && !this.sel.compare,
     );
   }
 
@@ -293,14 +310,19 @@ export class App {
     }
     this.controls.show(this.sel, data.meta.slots);
     this.refreshReadout();
+    this.syncUrl();
+  }
+
+  private syncUrl(): void {
     const q = new URLSearchParams(location.search); // keeps cam= and the like
     q.set('city', this.sel.city);
     q.set('month', String(this.sel.month));
-    q.set('slot', data.meta.slots[this.sel.slot]!.label);
+    q.set('slot', this.data!.meta.slots[this.sel.slot]!.label);
     q.set('state', this.sel.state);
     q.set('layer', this.sel.layer);
-    if (this.sel.compare) q.set('compare', '1');
-    else q.delete('compare');
+    for (const flag of ['compare', 'hold'] as const)
+      if (this.sel[flag]) q.set(flag, '1');
+      else q.delete(flag);
     history.replaceState(null, '', `?${q}`);
   }
 }

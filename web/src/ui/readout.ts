@@ -18,7 +18,10 @@ export class Readout {
     parent.append(this.el);
   }
 
-  /** `walking`: where the occupant is headed, while they walk (the facade chases them). */
+  /**
+   * `walking`: where the occupant is headed, while they walk (the facade chases them, unless
+   * `held`, when it keeps its state until they arrive).
+   */
   show(
     manifest: Manifest,
     view: RecordView,
@@ -26,6 +29,7 @@ export class Readout {
     month: number,
     day: number,
     walking: string | null = null,
+    held = false,
   ): void {
     const r = reading(manifest, view);
     const m = view.metrics;
@@ -46,6 +50,7 @@ export class Readout {
       `<div class="title"><strong>${label}</strong> <span class="dim">· ${city}, ` +
         `${MONTHS[month - 1]} ${day}, ${s.label} LST</span></div>`,
     ];
+    if (held) lines.push(`<div class="dim small">Facade on hold until they arrive.</div>`);
     if (r) {
       const main = r.radiance ?? r.surrogate;
       lines.push(

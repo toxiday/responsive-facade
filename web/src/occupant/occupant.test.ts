@@ -163,6 +163,21 @@ describe('controller', () => {
     expect(walk(c, stateTarget(manifest, grid, 'cooking_range')!)).toEqual(['cooking_range']);
   });
 
+  it('held mid-walk, the facade stays put until released, then chases again', () => {
+    const c = new OccupantController(manifest, grid, entry, 'ambient');
+    const seen: string[] = [];
+    c.onState = (id) => seen.push(id);
+    let hold = true;
+    c.canChase = () => !hold;
+    c.goTo(stateTarget(manifest, grid, 'desk')!);
+    for (let i = 0; i < 90; i++) c.update(1 / 60);
+    expect(c.mode).toBe('walking');
+    expect(seen).toEqual([]);
+    hold = false;
+    c.update(1 / 60);
+    expect(seen).toEqual([nearestStanding(manifest, c.pos)]);
+  });
+
   it('on the sofa the TV toggles; away from it, the TV does nothing', () => {
     const c = new OccupantController(manifest, grid, entry, 'ambient');
     expect(c.toggleTv()).toBe(false);

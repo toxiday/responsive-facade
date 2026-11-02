@@ -3,7 +3,8 @@
 //     approach point (for the sofa, between it and the coffee table), turn and sit down onto
 //     it ('sitting'); from a seat they first stand up back to that point ('rising');
 //   - while walking, the facade chases them: whenever `canChase()` allows (the app says yes once
-//     the previous curtain has finished), the state becomes the standing state nearest to them;
+//     the previous curtain has finished, and never while the visitor holds the facade until
+//     arrival), the state becomes the standing state nearest to them;
 //   - on arrival at a seat the state is the seat's activity; on open floor, the nearest standing
 //     state;
 //   - seated on the sofa or the chaise, the TV toggles between the relax and TV states.

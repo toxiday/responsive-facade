@@ -62,6 +62,15 @@ function appShots() {
     ['app-occupant-range', q('cooking_range', '11:30')],
     ['app-occupant-dining', q('dining', '12:30')],
     ['app-occupant-walking', q('ambient', '11:30'), `window.__rf.app.goToState('dining')`],
+    // "Hold until they arrive": mid-walk the facade has not moved; on arrival it has.
+    ...[
+      ['walking', 2],
+      ['arrived', 8],
+    ].map(([name, sec]) => [
+      `app-hold-${name}`,
+      '?city=houston&month=12&slot=11:30&hold=1',
+      `(window.__rf.app.goToState('dining'), window.__rf.app.advance(${sec}))`,
+    ]),
     // Walking from the entry to sit on the sofa, seen from above.
     ...[2, 3.5, 4.5, 5.2, 5.8, 7].map((sec) => [
       `app-sofa-walk-${String(sec).replace('.', '_')}s`,
