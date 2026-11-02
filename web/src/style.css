@@ -370,9 +370,13 @@ body.night .compass {
   color: var(--muted);
 }
 
+.readout .when {
+  color: var(--muted);
+}
+
+/* The chip sits on the same baseline as the target beside it. */
 .readout .big .chip {
   margin-left: 8px;
-  align-self: center;
 }
 
 .readout .num {

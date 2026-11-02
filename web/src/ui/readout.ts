@@ -50,8 +50,9 @@ export class Readout {
           : (view.state?.label ?? view.stateId);
     const main: string[] = [
       `<div class="title"><span class="hint" aria-hidden="true">▴</span>` +
-        `<strong>${label}</strong> <span class="dim">· ${city}, ` +
-        `${MONTHS[month - 1]} ${day}${morning ? '' : `, ${s.label} LST`}</span></div>`,
+        `<strong>${label}</strong></div>`,
+      `<div class="when">${city}, ${MONTHS[month - 1]} ${day}` +
+        `${morning ? '' : `, ${s.label} LST`}</div>`,
     ];
     const more: string[] = [];
     if (held) more.push(`<div>Facade on hold until they arrive.</div>`);
