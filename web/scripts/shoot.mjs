@@ -66,6 +66,8 @@ function appShots() {
     ['app-baseline-radiance', q('baseline', '11:30', '&layer=radiance')],
     // The occupant (M4): where they start, the activity poses, standing, and mid-walk.
     ['app-occupant-entry', '?city=houston&month=12&slot=11:30'],
+    // The readout's details, open (as on hover or a tap).
+    ['app-readout-open', q('dining', '12:30'), `document.querySelector('.readout').focus()`],
     ['app-occupant-desk', q('desk', '11:30')],
     ['app-occupant-tv', q('couch_tv', '15:30')],
     ['app-occupant-chaise', q('lounger_relax', '11:30')],

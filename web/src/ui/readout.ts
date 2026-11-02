@@ -1,7 +1,8 @@
-// The readout (guidelines §6, HUD): Radiance lux is the main number, the surrogate smaller
-// beside it; the target and whether the occupant's light is in v3's band; the zone's share in
-// band, glare, how the facade got there, and the sky. At night (the day's clock) there are no
-// numbers, only when the day starts again.
+// The readout (guidelines §6, HUD), kept minimal (Tony, 2026-11-01): the activity with the place
+// and time, the lux at the occupant (Radiance where there is a run), the target and whether the
+// light is in v3's band. The rest opens on hover (or a tap, which focuses it): where the number
+// is taken and the surrogate's value, the zone's share in band, glare, how the facade got
+// there, and the sky. At night (the day's clock) there are no numbers.
 
 import type { Manifest } from '../data/manifest';
 import { reading, type RecordView } from '../app/record';
@@ -24,6 +25,7 @@ export class Readout {
   constructor(parent: HTMLElement) {
     this.el = document.createElement('section');
     this.el.className = 'readout';
+    this.el.tabIndex = 0; // a tap opens the details on touch screens
     this.el.setAttribute('aria-live', 'polite');
     parent.append(this.el);
   }
@@ -38,6 +40,7 @@ export class Readout {
   ): void {
     const r = reading(manifest, view);
     const m = view.metrics;
+    const s = view.slot;
     const label = walking
       ? `Walking to ${walking.charAt(0).toLowerCase()}${walking.slice(1)}`
       : morning
@@ -45,42 +48,43 @@ export class Readout {
         : view.stateId === 'baseline'
           ? 'Conventional facade (baseline)'
           : (view.state?.label ?? view.stateId);
-    const where = r?.where === 'floor' ? 'floor median' : 'at the occupant';
-    const facade =
-      view.ship === 'baseline'
-        ? 'A fixed conventional facade, judged against the 200 lux ambient brief.'
-        : `Facade: ${view.ship === 'warm' ? 'adjusted from the previous hour' : 'solved afresh'}` +
-          (view.flips === null ? '.' : `, ${view.flips} panels changed.`);
-    const s = view.slot;
-    const lines: string[] = [
-      `<div class="title"><strong>${label}</strong> <span class="dim">· ${city}, ` +
+    const main: string[] = [
+      `<div class="title"><span class="hint" aria-hidden="true">▴</span>` +
+        `<strong>${label}</strong> <span class="dim">· ${city}, ` +
         `${MONTHS[month - 1]} ${day}${morning ? '' : `, ${s.label} LST`}</span></div>`,
     ];
-    if (held) lines.push(`<div class="dim small">Facade on hold until they arrive.</div>`);
+    const more: string[] = [];
+    if (held) more.push(`<div>Facade on hold until they arrive.</div>`);
     if (morning) {
-      lines.push(`<div class="dim">The sun is down. The day starts again at ${morning} LST.</div>`);
-      this.el.innerHTML = lines.join('');
-      return;
-    }
-    if (r) {
-      const main = r.radiance ?? r.surrogate;
-      lines.push(
-        `<div class="big"><span class="num">${fmt(main)}</span> lux ` +
-          `<span class="dim">${r.radiance === null ? 'surrogate' : 'Radiance'} ${where}</span>` +
-          (r.radiance === null ? '' : ` <span class="small">surrogate ${fmt(r.surrogate)}</span>`) +
-          `</div>`,
-        `<div>Target ${fmt(r.target)} lux · <span class="chip" data-status="${r.status}">` +
-          `${r.status}</span></div>`,
+      more.push(`<div>The sun is down. The day starts again at ${morning} LST.</div>`);
+    } else {
+      if (r) {
+        const where = r.where === 'floor' ? 'floor median' : 'at the occupant';
+        main.push(
+          `<div class="big"><span class="num">${fmt(r.radiance ?? r.surrogate)}</span> lux` +
+            `<span class="target">Target ${fmt(r.target)} lux</span>` +
+            `<span class="chip" data-status="${r.status}">${r.status}</span></div>`,
+        );
+        more.push(
+          `<div>${r.radiance === null ? 'Surrogate' : 'Radiance'} ${where}` +
+            (r.radiance === null ? '' : ` · surrogate ${fmt(r.surrogate)} lux`) +
+            `</div>`,
+        );
+      }
+      const facade =
+        view.ship === 'baseline'
+          ? 'A fixed conventional facade, judged against the 200 lux ambient brief.'
+          : `Facade ${view.ship === 'warm' ? 'adjusted from the previous hour' : 'solved afresh'}` +
+            (view.flips === null ? '.' : `, ${view.flips} panels changed.`);
+      const inBand = m.in_band_rad?.[0] ?? m.in_band_sur[0];
+      more.push(
+        `<div>${inBand}% of the zone in band · ` +
+          `${m.glare_rad ?? m.glare_sur} floor cells over 3000 lux</div>`,
+        `<div>${facade} Sun ${s.alt.toFixed(0)}° up, ${s.sky} sky.</div>`,
+        `<div class="small">Room lit from the Radiance result (direct sun drawn separately)` +
+          `${view.tvOn ? '; the TV glow is for show and not in the numbers' : ''}.</div>`,
       );
     }
-    const inBand = m.in_band_rad?.[0] ?? m.in_band_sur[0];
-    lines.push(
-      `<div class="dim">${inBand}% of the zone in band · ` +
-        `${m.glare_rad ?? m.glare_sur} floor cells over 3000 lux</div>`,
-      `<div class="dim">${facade} Sun ${s.alt.toFixed(0)}° up, ${s.sky} sky.</div>`,
-      `<div class="dim small">Room lit from the Radiance result (direct sun drawn separately)` +
-        `${view.tvOn ? '; the TV glow is for show and not in the numbers' : ''}.</div>`,
-    );
-    this.el.innerHTML = lines.join('');
+    this.el.innerHTML = `${main.join('')}<div class="more"><div>${more.join('')}</div></div>`;
   }
 }

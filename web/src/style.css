@@ -207,11 +207,45 @@ body.night .compass {
   font-size: 11px;
 }
 
-/* Above the time bar. */
+/* Above the time bar. Minimal; the details open on hover, or on a tap (focus). */
 .readout {
   left: 12px;
   bottom: calc(var(--timebar-h) + 20px);
-  max-width: 27rem;
+  width: min(23rem, calc(100vw - 24px));
+  outline: none;
+}
+
+.readout .hint {
+  float: right;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+
+.readout .more {
+  display: grid;
+  grid-template-rows: 0fr;
+  color: var(--muted);
+  transition: grid-template-rows 0.2s ease;
+}
+
+.readout .more > div {
+  overflow: hidden;
+}
+
+.readout .more > div > :first-child {
+  margin-top: 6px;
+}
+
+.readout:hover .more,
+.readout:focus .more {
+  grid-template-rows: 1fr;
+}
+
+.readout:hover .hint,
+.readout:focus .hint {
+  transform: rotate(180deg);
 }
 
 /* The time bar (ui/timebar.ts): bottom centre, as wide as the page allows. A light line at each
@@ -322,7 +356,23 @@ body.night .compass {
 }
 
 .readout .big {
-  margin: 4px 0 2px;
+  display: flex;
+  align-items: baseline;
+  margin-top: 2px;
+}
+
+.readout .big .num {
+  margin-right: 4px;
+}
+
+.readout .target {
+  margin-left: 12px;
+  color: var(--muted);
+}
+
+.readout .big .chip {
+  margin-left: 8px;
+  align-self: center;
 }
 
 .readout .num {
@@ -382,7 +432,7 @@ body.night .compass {
 
   .readout {
     right: 12px;
-    max-width: none;
+    width: auto;
   }
 }
 
