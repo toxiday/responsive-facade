@@ -28,8 +28,10 @@ Facing angles are in the room frame, degrees counter-clockwise from +x: 0 = towa
 90 = towards the N wall, 180 = towards the W wall, 270 = towards the S wall.
 
 Target lux comes from the v3 activity table (`live_solver.ACTIVITIES`), except the 200 lux of
-the ambient and standing states (Tony's general level) and the 50 lux screen proxy
-(`live_solver.TARGET_LUX_MIN`).
+the ambient and standing states (Tony's general level), the 50 lux screen proxy
+(`live_solver.TARGET_LUX_MIN`), and relaxing on the sofa or the chaise without the TV, at
+RELAX_LUX = 200 (Tony, 2026-11-01: so it differs from watching TV, which keeps v3's
+"Relaxing / TV" 150).
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from . import config
 OBSTACLE_MIN_Z = 0.05      # anything lower (the rug) can be walked over
 OBSTACLE_MAX_Z0 = 1.2      # anything that starts higher (wall cabinets) is overhead
 AMBIENT_LUX = 200.0
+RELAX_LUX = 200.0          # relaxing on the sofa or chaise, TV off (v3's 150 stays for TV)
 ZONE_RADIUS = 1.0
 SCREEN_PROXY_RADIUS = 0.6
 
@@ -545,19 +548,20 @@ def states() -> list[State]:
     def z(p, target, radius=ZONE_RADIUS, role="activity"):
         return Zone(round(p[0], 3), round(p[1], 3), float(target), float(radius), role)
 
-    relax = lux["Relaxing / TV"]
+    tv_seat = lux["Relaxing / TV"]
     # Screen proxy: in front of the TV, between it and the coffee table, clear of the sofa zones.
     screen = z((tv[0] - 0.8, tv[1]), lux_min, SCREEN_PROXY_RADIUS, "screen_proxy")
     cook = lux["Cooking"]
     out = [
         State("ambient", "Ambient", "ambient",
               (z((w / 2, d / 2), AMBIENT_LUX, math.hypot(w, d) / 2 + 0.01, "ambient"),)),
-        State("couch_relax", "Relaxing on the sofa", "activity", (z(seat["couch"], relax),)),
-        State("couch_tv", "Watching TV", "activity", (z(seat["couch"], relax), screen)),
+        State("couch_relax", "Relaxing on the sofa", "activity",
+              (z(seat["couch"], RELAX_LUX),)),
+        State("couch_tv", "Watching TV", "activity", (z(seat["couch"], tv_seat), screen)),
         State("lounger_relax", "Relaxing on the chaise", "activity",
-              (z(seat["lounger"], relax),)),
+              (z(seat["lounger"], RELAX_LUX),)),
         State("lounger_tv", "Watching TV from the chaise", "activity",
-              (z(seat["lounger"], relax), screen)),
+              (z(seat["lounger"], tv_seat), screen)),
         State("lounge_read_w", "Reading by the window", "activity",
               (z(seat["lounge_read_w"], lux["Reading"]),)),
         State("lounge_read_e", "Reading by the window", "activity",

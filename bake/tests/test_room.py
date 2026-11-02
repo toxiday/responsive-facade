@@ -234,8 +234,11 @@ def test_activity_states_with_v3_activity_lux(states):
     assert [k for k, s in states.items() if s.kind != "standing"] == [
         "ambient", "couch_relax", "couch_tv", "lounger_relax", "lounger_tv", "lounge_read_w",
         "lounge_read_e", "dining", "counter", "cooking_w", "cooking_range", "cooking_e", "desk"]
-    assert states["couch_relax"].zones[0].target == lux["Relaxing / TV"]
-    assert states["lounger_relax"].zones[0].target == lux["Relaxing / TV"]
+    # Relaxing without the TV is 200 lux (Tony), so it differs from watching TV (v3's 150).
+    assert states["couch_relax"].zones[0].target == room.RELAX_LUX == 200
+    assert states["lounger_relax"].zones[0].target == room.RELAX_LUX
+    for k in ("couch_tv", "lounger_tv"):
+        assert states[k].zones[0].target == lux["Relaxing / TV"]
     assert states["lounge_read_w"].zones[0].target == lux["Reading"]
     assert states["lounge_read_e"].zones[0].target == lux["Reading"]
     assert states["counter"].zones[0].target == lux["Dining"]

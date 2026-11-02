@@ -14,7 +14,8 @@ For every slot of a chain:
 
 Chains run on N worker processes, each with its own solver on the GPU. Each chain is written
 atomically to bake/work/solve/{city}/{MM}/{state}.json, so a stopped bake resumes; a file
-whose settings differ from SETTINGS is redone. v3's console output goes to per-worker logs.
+whose settings differ from SETTINGS, or whose state's zones (targets) have changed since, is
+redone. (Files from before zones were recorded are taken as current.) v3's console output goes to per-worker logs.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import multiprocessing as mp
 import os
 import time
 import zlib
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -75,14 +77,21 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def is_done(city, month, state, settings=SETTINGS) -> bool:
+def zones_of(state) -> list[dict]:
+    return [asdict(z) for z in state.zones]
+
+
+def is_done(city, month, state, settings=SETTINGS, zones=None) -> bool:
     p = chain_path(city, month, state)
     if not p.exists():
         return False
     try:
-        return json.loads(p.read_text()).get("settings") == settings
+        doc = json.loads(p.read_text())
     except (ValueError, OSError):
         return False
+    if doc.get("settings") != settings:
+        return False
+    return zones is None or "zones" not in doc or doc["zones"] == zones
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +149,8 @@ def solve_chain(task) -> dict:
             out_slots.append(rec)
             prev_ship, prev_cold, prev_X = ship, b_cold, X_ship
     doc = {"city": city, "month": month, "day": day["day"], "state": sid,
-           "settings": st, "seconds": round(time.perf_counter() - t_chain, 2),
+           "settings": st, "zones": zones_of(_W["states"][sid]),
+           "seconds": round(time.perf_counter() - t_chain, 2),
            "provenance": {k: v for k, v in config.provenance().items() if k != "pipeline"},
            "slots": out_slots}
     _atomic_write(chain_path(city, month, sid), json.dumps(doc))
@@ -159,7 +169,9 @@ def tasks_for(cities, months, states=None) -> list[tuple]:
 
 def run(cities, months, states=None, procs=3, settings=SETTINGS, force=False) -> list[dict]:
     config.check_venv()
-    todo = [t for t in tasks_for(cities, months, states) if force or not is_done(*t, settings)]
+    zones = {s.id: zones_of(s) for s in room.states()}
+    todo = [t for t in tasks_for(cities, months, states)
+            if force or not is_done(*t, settings, zones.get(t[2]))]
     print(f"solve: {len(todo)} chain(s) to do on {procs} process(es)", flush=True)
     if not todo:
         return []
