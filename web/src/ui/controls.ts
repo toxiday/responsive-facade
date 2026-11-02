@@ -1,11 +1,12 @@
 // The control panel: city and baked day, where the occupant goes (each activity; the list reads
-// "Standing" while they are on open floor), whether they follow the daily schedule
-// (app/schedule.ts), whether the facade holds still until they arrive,
+// "Standing" while they are on open floor), what they do on their own (the daily schedule, a
+// random tour, or nothing; app/schedule.ts), whether the facade holds still until they arrive,
 // the conventional facade for comparison, and the heatmap layer with its legend. Only
 // city-months that have data are offered. The time is on the bar along the bottom (timebar.ts).
 
 import type { Legend } from '../data/manifest';
 import type { Layer } from '../app/record';
+import type { Routine } from '../app/schedule';
 
 export const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
 
@@ -29,11 +30,18 @@ export interface Selection {
   compare: boolean;
   /** Hold the facade while the occupant walks; it changes once they arrive (on by default). */
   hold: boolean;
-  /** The occupant follows the daily schedule (on unless turned off). */
-  schedule: boolean;
+  /** What the occupant does on their own: the daily schedule (the default), a random tour, or
+   * nothing. */
+  routine: Routine;
   /** Stop the clock (app/clock.ts) at the start of the hour being shown. */
   freeze: boolean;
 }
+
+const ROUTINES: [Routine, string, string][] = [
+  ['daily', 'Daily', 'Breakfast, reading, desk work, lunch, the chaise, cooking, TV: an hour each'],
+  ['random', 'Random', 'A different activity somewhere in the room every other hour'],
+  ['off', 'Off', 'They stay where you send them'],
+];
 
 const LAYERS: [Layer, string][] = [
   ['none', 'Off'],
@@ -87,7 +95,7 @@ export class Controls {
   private readonly state: HTMLSelectElement;
   private readonly compare: HTMLInputElement;
   private readonly hold: HTMLInputElement;
-  private readonly schedule: HTMLInputElement;
+  private readonly routines = new Map<Routine, HTMLButtonElement>();
   private readonly layers = new Map<Layer, HTMLButtonElement>();
   private readonly legend: HTMLElement;
 
@@ -120,15 +128,13 @@ export class Controls {
     for (const a of activities) this.state.append(el('option', { value: a.id }, a.label));
     this.state.addEventListener('change', () => this.onChange({ state: this.state.value }));
 
-    this.schedule = el('input', { type: 'checkbox' });
-    this.schedule.addEventListener('change', () =>
-      this.onChange({ schedule: this.schedule.checked }),
-    );
-    const scheduleLabel = el('label', {
-      class: 'check',
-      title: 'Breakfast, reading, desk work, lunch, the chaise, cooking, TV: an activity an hour',
-    });
-    scheduleLabel.append(this.schedule, el('span', {}, 'Daily routine'));
+    const routine = el('div', { class: 'seg', role: 'group', 'aria-label': 'Routine' });
+    for (const [id, label, title] of ROUTINES) {
+      const b = el('button', { type: 'button', title }, label);
+      b.addEventListener('click', () => this.onChange({ routine: id }));
+      this.routines.set(id, b);
+      routine.append(b);
+    }
 
     this.hold = el('input', { type: 'checkbox' });
     this.hold.addEventListener('change', () => this.onChange({ hold: this.hold.checked }));
@@ -158,7 +164,7 @@ export class Controls {
       head,
       row('Place', this.city, this.month),
       row('Go to', this.state),
-      row('Schedule', scheduleLabel),
+      row('Routine', routine),
       row('Facade', holdLabel),
       row('Compare', compareLabel),
       row('Heatmap', seg),
@@ -179,7 +185,7 @@ export class Controls {
     this.month.value = String(sel.month);
     const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
     this.state.value = listed ? sel.state : '';
-    this.schedule.checked = sel.schedule;
+    for (const [id, b] of this.routines) b.setAttribute('aria-pressed', String(id === sel.routine));
     this.hold.checked = sel.hold;
     this.compare.checked = sel.compare;
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));

@@ -9,10 +9,11 @@
 // own ?slot=. The selection lives in the URL, so a view can be linked (and shot by
 // scripts/shoot.mjs).
 //
-// By default the occupant follows a daily schedule (schedule.ts), starting at the hour's
-// activity; a click, the "Go to" list or the TV takes over from it, and the box unticks. With
-// the schedule off, a linked state puts the occupant straight there; otherwise they start
-// just in from the entry door, in ambient.
+// By default the occupant follows a routine (schedule.ts): the daily schedule, or a random tour
+// that moves every other hour (?routine=random, with ?seed= to fix the tour), starting at the
+// hour's activity. A click, the "Go to" list or the TV takes over, and the routine turns off.
+// With it off (?routine=off), a linked state puts the occupant straight there; otherwise they
+// start just in from the entry door, in ambient.
 
 import { Object3D, Raycaster, Vector2 } from 'three';
 import type { FurnitureItem, Manifest } from '../data/manifest';
@@ -29,7 +30,16 @@ import { Readout } from '../ui/readout';
 import { TimeBar } from '../ui/timebar';
 import { DayClock, HOUR_S, NIGHT_S } from './clock';
 import { showRecord, type Layer, type RecordView } from './record';
-import { MIN_STAY_S, nextPlanned, plannedState, scheduleGoal } from './schedule';
+import {
+  dailyPlan,
+  MIN_STAY_S,
+  nextPlanned,
+  randomPlan,
+  ROUTINES,
+  scheduleGoal,
+  type Plan,
+  type Routine,
+} from './schedule';
 
 const LAYER_IDS: Layer[] = ['none', 'radiance', 'surrogate'];
 /** A few steps in from the entry door, clear of the open door leaf, facing into the room. */
@@ -57,8 +67,11 @@ export class App {
   /** The daylight level and night as last put on the stage. */
   private daylight = 1;
   private night = false;
-  /** The state the schedule last sent the occupant to; walk times between states, by pair. */
+  /** The state the routine last sent the occupant to; walk times between states, by pair. */
   private scheduled: string | null = null;
+  /** Days since the page opened (the random routine changes with each). Its seed. */
+  private day = 0;
+  private seed = 0;
   private readonly walkTimes = new Map<string, number>();
   private sel!: Selection;
   private data: MonthData | null = null;
@@ -104,7 +117,7 @@ export class App {
     this.readout = new Readout(ui);
     this.controls.onChange = (patch) => {
       if (patch.state !== undefined) return this.goToState(patch.state);
-      if (patch.hold !== undefined || patch.schedule !== undefined)
+      if (patch.hold !== undefined || patch.routine !== undefined)
         return void this.setOptions(patch);
       void this.set(patch);
     };
@@ -138,19 +151,24 @@ export class App {
       compare: params.get('compare') === '1' || params.get('state') === 'baseline',
       hold: params.get('hold') !== '0',
       freeze: params.get('freeze') === '1',
-      schedule: params.get('schedule') !== '0',
+      routine: ROUTINES.includes(params.get('routine') as Routine)
+        ? (params.get('routine') as Routine)
+        : params.get('schedule') === '0' // the earlier on/off switch
+          ? 'off'
+          : 'daily',
     };
+    const seed = Number(params.get('seed'));
+    this.seed = Number.isInteger(seed) && params.has('seed') ? seed : (Math.random() * 2 ** 31) | 0;
     this.data = await this.store.get(this.sel.city, this.sel.month);
     const slots = this.data.meta.slots;
     const wanted = this.sel.freeze ? params.get('slot') : null;
     const byLabel = slots.findIndex((s) => s.label === wanted);
     const opening = slots.findIndex((s) => s.label >= OPENING_HOUR);
     this.sel.slot = byLabel >= 0 ? byLabel : Math.max(0, opening);
-    // On schedule, the occupant starts at the hour's activity; off it, a linked state puts them
+    // On a routine, the occupant starts at the hour's activity; off it, a linked state puts them
     // straight there.
-    const linked = this.sel.schedule
-      ? plannedState(this.data.meta.slots[this.sel.slot]!.label)
-      : params.get('state');
+    const plan = this.plan();
+    const linked = plan ? plan(this.sel.slot, 0) : params.get('state');
     const t = linked ? stateTarget(this.manifest, this.grid, linked) : null;
     if (t) {
       this.occupant.placeAt(t);
@@ -179,13 +197,13 @@ export class App {
 
   /**
    * The options that change no view. Hold: the facade keeps its state while the occupant walks,
-   * or chases them again from their next step. Schedule: the occupant follows the daily
-   * schedule again (from where they are), or stays put. Freeze: the clock stops at the start of the
+   * or chases them again from their next step. Routine: the occupant follows the daily schedule
+   * or the random tour (from where they are), or stays put. Freeze: the clock stops at the start of the
    * hour shown, or runs on from there; frozen at night, the day starts. Otherwise nothing is
    * redrawn, so a curtain already moving finishes as it was.
    */
-  setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze' | 'schedule'>>): Promise<void> {
-    if (patch.schedule) this.scheduled = null; // walk to this hour's activity
+  setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze' | 'routine'>>): Promise<void> {
+    if (patch.routine && patch.routine !== 'off') this.scheduled = null; // to this hour's
     this.pending = this.pending.then(() => {
       this.sel = { ...this.sel, ...patch };
       if (patch.freeze !== undefined) {
@@ -247,29 +265,40 @@ export class App {
     this.stage.invalidate();
   }
 
-  /** The visitor sends the occupant somewhere: that takes over from the schedule. */
+  /** The visitor sends the occupant somewhere: that takes over from the routine. */
   private takeOver(): void {
-    if (!this.sel.schedule) return;
-    this.sel = { ...this.sel, schedule: false }; // at once, so the next frame doesn't follow it
-    void this.setOptions({ schedule: false });
+    if (this.sel.routine === 'off') return;
+    this.sel = { ...this.sel, routine: 'off' }; // at once, so the next frame doesn't follow it
+    void this.setOptions({ routine: 'off' });
   }
 
-  private get labels(): string[] {
-    return this.data!.meta.slots.map((s) => s.label);
+  /** The routine's plan over the day being shown; null with the routine off. */
+  private plan(): Plan | null {
+    if (this.sel.routine === 'daily') return dailyPlan(this.data!.meta.slots.map((s) => s.label));
+    if (this.sel.routine === 'random') {
+      return randomPlan(
+        this.manifest.activities.map((a) => a.states),
+        this.seed,
+      );
+    }
+    return null;
   }
 
-  /** True while the occupant walks to the schedule's next activity. */
-  private walkingOn(): boolean {
-    const next = nextPlanned(this.labels, this.hour, this.clock.night);
+  /** True while the occupant walks to the routine's next activity. */
+  private walkingOn(plan: Plan): boolean {
+    const n = this.data!.nSlots;
+    const next = nextPlanned(plan, n, this.hour, this.day, this.clock.night);
     const o = this.occupant;
     return next !== null && o.moving && o.destination?.stateId === next;
   }
 
-  /** On schedule: send the occupant on to the state the schedule has for now (schedule.ts). */
-  private followSchedule(): void {
+  /** On a routine: send the occupant on to the state it has for now (schedule.ts). */
+  private followSchedule(plan: Plan): void {
     const goal = scheduleGoal(
-      this.labels,
+      plan,
+      this.data!.nSlots,
       this.hour,
+      this.day,
       this.clock.night,
       this.clock.left,
       (a, b) => this.walkSeconds(a, b),
@@ -318,10 +347,13 @@ export class App {
       const n = this.data.nSlots;
       // The clock waits while the time bar's thumb is held.
       this.clock.running = !this.sel.freeze && !this.timebar.dragging;
-      // On schedule, the hour waits at its end for the occupant to reach the next activity.
-      this.clock.holdAtEnd = this.sel.schedule && this.walkingOn();
+      // On a routine, the hour waits at its end for the occupant to reach the next activity.
+      const plan = this.plan();
+      this.clock.holdAtEnd = plan !== null && this.walkingOn(plan);
+      const wasNight = this.clock.night;
       const next = this.clock.update(dt, this.hour, n);
       if (next !== null) {
+        if (wasNight) this.day++;
         this.hour = next;
         void this.set({ slot: next });
       }
@@ -332,7 +364,7 @@ export class App {
         document.body.classList.toggle('night', this.night);
         if (this.night) this.showNight();
       }
-      if (this.sel.schedule) this.followSchedule();
+      if (plan) this.followSchedule(plan);
       const k = this.clock.daylight;
       if (k !== this.daylight) {
         this.daylight = k;
@@ -479,10 +511,12 @@ export class App {
     for (const flag of ['compare', 'freeze'] as const)
       if (this.sel[flag]) q.set(flag, '1');
       else q.delete(flag);
-    for (const flag of ['hold', 'schedule'] as const)
-      // on unless the link says 0
-      if (this.sel[flag]) q.delete(flag);
-      else q.set(flag, '0');
+    if (this.sel.hold)
+      q.delete('hold'); // on unless the link says 0
+    else q.set('hold', '0');
+    q.delete('schedule');
+    if (this.sel.routine === 'daily') q.delete('routine');
+    else q.set('routine', this.sel.routine);
     history.replaceState(null, '', `?${q}`);
   }
 }
