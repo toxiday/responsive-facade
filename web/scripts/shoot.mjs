@@ -56,10 +56,10 @@ function appShots() {
     ['app-night-morning', '?city=houston&month=12', lastHourThen(18)],
     // The daily schedule from breakfast (Houston Dec): reading, the chaise, cooking, TV.
     ...[
-      ['0930', 7],
-      ['1330', 32],
-      ['1530', 49.5],
-      ['1630', 61],
+      ['0930', 5.5],
+      ['1330', 30.5],
+      ['1530', 45],
+      ['1630', 54],
     ].map(([name, sec]) => [
       `app-schedule-${name}`,
       '?city=houston&month=12&slot=08:30',
@@ -67,8 +67,8 @@ function appShots() {
     ]),
     // The random routine (seed 7): at the counter at 10:30, on the sofa with the TV at 14:30.
     ...[
-      ['1030', 16],
-      ['1430', 37],
+      ['1030', 13.5],
+      ['1430', 33.5],
     ].map(([name, sec]) => [
       `app-random-${name}`,
       '?city=houston&month=12&routine=random&seed=7',

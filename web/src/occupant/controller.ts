@@ -15,7 +15,7 @@ import type { Manifest } from '../data/manifest';
 import { nearestStanding, type SeatTarget, type Target } from './targets';
 import { pathLength, type Pt, type WalkGrid } from './walk';
 
-export const WALK_SPEED = 1.3; // m/s
+export const WALK_SPEED = 1.69; // m/s: a brisk walk, 30% over the first 1.3 (Tony)
 const TURN_RATE = 540; // deg/s
 export const SIT_S = 0.7; // turning round and lowering onto a seat
 export const RISE_S = 0.5;
