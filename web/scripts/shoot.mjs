@@ -42,11 +42,20 @@ const SHOTS = [
 ].filter(([name]) => !args.only || name.startsWith(args.only));
 
 // The demo (`--only app`): a few selections, and one change frozen mid-way through the facade
-// animation (the third entry runs in the page after load).
+// animation (the third entry runs in the page after load). Time is frozen in all but the night
+// shots, so the clock cannot move a view on.
 function appShots() {
   const q = (state, slot, extra = '') =>
     `?city=houston&month=12&state=${state}&slot=${slot}${extra}`;
-  return [
+  // The last hour, then on by `sec` (12: into the night; 22: the next morning).
+  const lastHourThen = (sec) =>
+    `window.__rf.app.set({ slot: 99 }).then(() => window.__rf.app.advance(${sec}))`;
+  const night = [
+    ['app-night', '?city=houston&month=12', lastHourThen(12)],
+    ['app-night-tv', q('couch_tv', '16:30'), lastHourThen(12)],
+    ['app-night-morning', '?city=houston&month=12', lastHourThen(22)],
+  ];
+  const frozen = [
     ['app-ambient', '?'],
     ['app-couch_relax-radiance', q('couch_relax', '12:30', '&layer=radiance')],
     ['app-dining-surrogate', q('dining', '11:30', '&layer=surrogate')],
@@ -91,6 +100,14 @@ function appShots() {
         `window.__rf.app.previewAt({ state: 'couch_tv' }, ${ms})`,
       ],
     ]),
+  ];
+  return [
+    ...frozen.map(([name, query, action]) => [
+      name,
+      `${query}${query === '?' ? '' : '&'}freeze=1`,
+      action,
+    ]),
+    ...night,
   ];
 }
 

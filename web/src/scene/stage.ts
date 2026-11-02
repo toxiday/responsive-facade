@@ -44,6 +44,7 @@ export class Stage {
   private dirty = true;
   private frames = 0;
   onFrame: (() => void) | null = null;
+  private readonly background = PALETTE.background.clone();
 
   constructor(
     readonly manifest: Manifest,
@@ -51,7 +52,7 @@ export class Stage {
     opts: { facadeSides?: Side[] } = {},
   ) {
     const { room } = manifest;
-    this.scene.background = PALETTE.background;
+    this.scene.background = this.background;
     this.renderer = createRenderer(host);
     this.rig = createViewRig(room, this.renderer.domElement);
     this.shell = createShell(room);
@@ -110,6 +111,13 @@ export class Stage {
 
   setSun(slot: SunSlot | null): void {
     this.sun.set(slot);
+    this.invalidate();
+  }
+
+  /** Daylight level, 1 by day and 0 at night: dims the sun, the sky and the background. */
+  setDaylight(k: number): void {
+    this.sun.setDaylight(k);
+    this.background.lerpColors(PALETTE.night, PALETTE.background, k);
     this.invalidate();
   }
 

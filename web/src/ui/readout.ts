@@ -1,12 +1,22 @@
 // The readout (guidelines §6, HUD): Radiance lux is the main number, the surrogate smaller
 // beside it; the target and whether the occupant's light is in v3's band; the zone's share in
-// band, glare, how the facade got there, and the sky.
+// band, glare, how the facade got there, and the sky. At night (the day's clock) there are no
+// numbers, only when the day starts again.
 
 import type { Manifest } from '../data/manifest';
 import { reading, type RecordView } from '../app/record';
 import { MONTHS } from './controls';
 
 const fmt = (v: number) => Math.round(v).toLocaleString('en-US');
+
+export interface ReadoutExtras {
+  /** Where the occupant is headed, while they walk (the facade chases them). */
+  walking?: string | null;
+  /** The facade keeps its state until they arrive. */
+  held?: boolean;
+  /** At night, the first hour of the next day. */
+  morning?: string | null;
+}
 
 export class Readout {
   readonly el: HTMLElement;
@@ -18,26 +28,22 @@ export class Readout {
     parent.append(this.el);
   }
 
-  /**
-   * `walking`: where the occupant is headed, while they walk (the facade chases them, unless
-   * `held`, when it keeps its state until they arrive).
-   */
   show(
     manifest: Manifest,
     view: RecordView,
     city: string,
     month: number,
     day: number,
-    walking: string | null = null,
-    held = false,
+    { walking = null, held = false, morning = null }: ReadoutExtras = {},
   ): void {
     const r = reading(manifest, view);
     const m = view.metrics;
-    const label =
-      view.stateId === 'baseline'
-        ? 'Conventional facade (baseline)'
-        : walking
-          ? `Walking to ${walking.charAt(0).toLowerCase()}${walking.slice(1)}`
+    const label = walking
+      ? `Walking to ${walking.charAt(0).toLowerCase()}${walking.slice(1)}`
+      : morning
+        ? 'Night'
+        : view.stateId === 'baseline'
+          ? 'Conventional facade (baseline)'
           : (view.state?.label ?? view.stateId);
     const where = r?.where === 'floor' ? 'floor median' : 'at the occupant';
     const facade =
@@ -48,9 +54,14 @@ export class Readout {
     const s = view.slot;
     const lines: string[] = [
       `<div class="title"><strong>${label}</strong> <span class="dim">· ${city}, ` +
-        `${MONTHS[month - 1]} ${day}, ${s.label} LST</span></div>`,
+        `${MONTHS[month - 1]} ${day}${morning ? '' : `, ${s.label} LST`}</span></div>`,
     ];
     if (held) lines.push(`<div class="dim small">Facade on hold until they arrive.</div>`);
+    if (morning) {
+      lines.push(`<div class="dim">The sun is down. The day starts again at ${morning} LST.</div>`);
+      this.el.innerHTML = lines.join('');
+      return;
+    }
     if (r) {
       const main = r.radiance ?? r.surrogate;
       lines.push(

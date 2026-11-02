@@ -5,6 +5,9 @@
 // the ambient target, 200 lux, reads as 50% grey (sRGB 128). The sky light holds the room at
 // that ambient level. The sun is display-only: warmer at low altitude, scaled by DNI, and capped
 // well below real beam illuminance so sunlit colours keep their hue instead of washing to white.
+//
+// Night (the day's clock, app/clock.ts): a daylight level from 1 to 0 fades the sun out and the
+// sky down to a dim, cool NIGHT_LUX, so the room stays just legible.
 
 import { Color, DirectionalLight, HemisphereLight, Matrix4, Vector3 } from 'three';
 import type { Room, Vec3 } from '../data/manifest';
@@ -19,6 +22,10 @@ export const LUX = (GREY_50 * Math.PI) / 200;
 export const AMBIENT_LUX = 200;
 /** Display sun at normal incidence for DNI of 800 W/m² or more. */
 export const SUN_LUX = 2000;
+/** Sky light at night (display only). */
+export const NIGHT_LUX = 35;
+const SKY = { day: new Color(0xffffff), night: new Color('#8ea2c8') };
+const GROUND = { day: new Color(0xcdc5b9), night: new Color('#4a4e5c') };
 
 /** Display value (sRGB 0-1, before the highlight roll-off) of a matte surface under `lux`. */
 export function displayValue(lux: number, albedo = 1): number {
@@ -40,6 +47,9 @@ export class SunLight {
   readonly sky = new HemisphereLight(0xffffff, 0xcdc5b9, AMBIENT_LUX * LUX);
   private readonly centre: Vector3;
   private readonly corners: Vector3[];
+  /** The slot's sun intensity, before the daylight level. */
+  private sunIntensity = SUN_LUX * LUX;
+  private daylight = 1;
 
   constructor(room: Room, shadowSize: number) {
     const { width: W, depth: D, height: H } = room;
@@ -70,8 +80,18 @@ export class SunLight {
     // Display-only colour and strength from altitude and DNI (no sun patch without beam).
     const a = Math.max(0, Math.min(1, (slot.alt - 5) / 40));
     this.light.color.copy(new Color('#ffb36b')).lerp(new Color('#fff6ea'), a);
-    this.light.intensity = SUN_LUX * LUX * Math.min(1, slot.dni / 800);
+    this.sunIntensity = SUN_LUX * LUX * Math.min(1, slot.dni / 800);
+    this.light.intensity = this.sunIntensity * this.daylight;
     this.fitShadow();
+  }
+
+  /** Daylight level: 1 by day, 0 at night (the sun out, the sky at NIGHT_LUX). */
+  setDaylight(k: number): void {
+    this.daylight = k;
+    this.light.intensity = this.sunIntensity * k;
+    this.sky.intensity = (NIGHT_LUX + (AMBIENT_LUX - NIGHT_LUX) * k) * LUX;
+    this.sky.color.lerpColors(SKY.night, SKY.day, k);
+    this.sky.groundColor.lerpColors(GROUND.night, GROUND.day, k);
   }
 
   /** Fit the orthographic shadow camera to the room's corners as seen from the light. */

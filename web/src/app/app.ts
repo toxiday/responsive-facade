@@ -3,7 +3,8 @@
 // The facade chases them as they walk and settles on the seat's activity when they arrive (or,
 // with "Hold until they arrive", keeps its state for the whole walk); on the sofa, clicking the TV turns it on and off. The "Go to" list walks them to an
 // activity. The conventional facade can be shown instead for comparison. Changes play as a
-// curtain. The selection lives in the URL, so a view can be linked (and shot by
+// curtain. Time runs on by itself, 10 s a baked hour with a 10 s night between days, unless
+// frozen (clock.ts). The selection lives in the URL, so a view can be linked (and shot by
 // scripts/shoot.mjs); a linked state puts the occupant straight there.
 //
 // On first load the state is ambient, with the occupant just in from the entry door.
@@ -20,6 +21,7 @@ import { withEdges } from '../scene/edges';
 import { Stage } from '../scene/stage';
 import { Controls, type CityChoice, type Choice, type Selection } from '../ui/controls';
 import { Readout } from '../ui/readout';
+import { DayClock } from './clock';
 import { showRecord, type Layer, type RecordView } from './record';
 
 const LAYER_IDS: Layer[] = ['none', 'radiance', 'surrogate'];
@@ -37,6 +39,10 @@ export class App {
   private readonly readout: Readout;
   private readonly cities: CityChoice[];
   private readonly raycaster = new Raycaster();
+  private readonly clock = new DayClock();
+  /** The daylight level and night as last put on the stage. */
+  private daylight = 1;
+  private night = false;
   private sel!: Selection;
   private data: MonthData | null = null;
   private view: RecordView | null = null;
@@ -74,21 +80,25 @@ export class App {
     this.stage.scene.add(this.figure.group);
     this.stage.fill.apply(this.figure.group);
     withEdges(this.figure.group);
-    this.stage.tickers.push((dt) => this.tick(dt));
+    this.stage.tickers.push((dt) => this.step(dt));
     this.listen(this.stage.renderer.domElement);
 
     this.controls = new Controls(ui, this.cities, places, manifest.legend);
     this.readout = new Readout(ui);
     this.controls.onChange = (patch) => {
       if (patch.state !== undefined) return this.goToState(patch.state);
-      if (patch.hold !== undefined) return this.setHold(patch.hold);
+      if (patch.hold !== undefined || patch.freeze !== undefined)
+        return void this.setOptions(patch);
+      if (patch.slot !== undefined) this.clock.restart();
       void this.set(patch);
     };
     addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).closest('select, input')) return;
       const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
       const n = this.data?.nSlots ?? 0;
-      if (step && n) void this.set({ slot: Math.min(n - 1, Math.max(0, this.sel.slot + step)) });
+      if (!step || !n) return;
+      this.clock.restart();
+      void this.set({ slot: Math.min(n - 1, Math.max(0, this.sel.slot + step)) });
     });
   }
 
@@ -105,7 +115,9 @@ export class App {
       layer: layer && LAYER_IDS.includes(layer) ? layer : 'none',
       compare: params.get('compare') === '1' || params.get('state') === 'baseline',
       hold: params.get('hold') === '1',
+      freeze: params.get('freeze') === '1',
     };
+    this.clock.running = !this.sel.freeze;
     this.data = await this.store.get(this.sel.city, this.sel.month);
     const wanted = params.get('slot');
     const byLabel = this.data.meta.slots.findIndex((s) => s.label === wanted);
@@ -139,13 +151,24 @@ export class App {
   }
 
   /**
-   * Hold the facade while the occupant walks, or let it chase them again (from their next
-   * step). Nothing is redrawn, so a curtain already moving finishes as it was.
+   * The options that change no view. Hold: the facade keeps its state while the occupant walks,
+   * or chases them again from their next step. Freeze: the clock stops on the hour shown, or
+   * runs on from the start of it; frozen at night, the day starts. Otherwise nothing is
+   * redrawn, so a curtain already moving finishes as it was.
    */
-  setHold(hold: boolean): Promise<void> {
+  setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze'>>): Promise<void> {
     this.pending = this.pending.then(() => {
-      this.sel = { ...this.sel, hold };
-      this.controls.show(this.sel, this.data!.meta.slots);
+      this.sel = { ...this.sel, ...patch };
+      if (patch.freeze !== undefined) {
+        const wasNight = this.clock.night;
+        this.clock.running = !patch.freeze;
+        if (!patch.freeze || wasNight) this.clock.restart();
+        if (wasNight) {
+          this.sel.slot = 0;
+          return this.render(true);
+        }
+      }
+      this.controls.show(this.sel, this.data!.meta.slots, this.clock.night);
       this.refreshReadout();
       this.syncUrl();
     });
@@ -178,9 +201,9 @@ export class App {
     if (t) this.walkTo(t);
   }
 
-  /** Scripted shots: move the occupant on by `seconds` at once, in 60 Hz steps. */
+  /** Scripted shots: move the occupant and the clock on by `seconds` at once, in 60 Hz steps. */
   advance(seconds: number): void {
-    for (let i = 0; i < Math.round(seconds * 60); i++) this.tick(1 / 60);
+    for (let i = 0; i < Math.round(seconds * 60); i++) this.step(1 / 60);
     this.stage.invalidate();
   }
 
@@ -198,6 +221,36 @@ export class App {
       this.refreshReadout();
       this.stage.invalidate();
     }
+  }
+
+  /** One frame: the day's clock (once a day is loaded), then the occupant. */
+  private step(dt: number): boolean {
+    let busy = false;
+    if (this.data) {
+      const next = this.clock.update(dt, this.sel.slot, this.data.nSlots);
+      if (next !== null) void this.set({ slot: next });
+      // Nightfall dims the room; the morning comes with the first hour's set() above.
+      if (this.clock.night !== this.night) {
+        this.night = this.clock.night;
+        document.body.classList.toggle('night', this.night);
+        if (this.night) this.showNight();
+      }
+      const k = this.clock.daylight;
+      if (k !== this.daylight) {
+        this.daylight = k;
+        this.stage.setDaylight(k);
+        busy = true;
+      }
+    }
+    return this.tick(dt) || busy;
+  }
+
+  /** Night: no heatmap (there is no baked hour), and the panel and readout say so. */
+  private showNight(): void {
+    this.stage.heatmap.mesh.visible = false;
+    this.controls.show(this.sel, this.data!.meta.slots, true);
+    this.refreshReadout();
+    this.stage.invalidate();
   }
 
   private tick(dt: number): boolean {
@@ -281,15 +334,11 @@ export class App {
           ? (this.manifest.states.find((s) => s.id === dest.stateId)?.label ?? dest.stateId)
           : 'a spot on the floor'
         : null;
-    this.readout.show(
-      this.manifest,
-      this.view,
-      city.label,
-      this.sel.month,
-      this.data.meta.day,
+    this.readout.show(this.manifest, this.view, city.label, this.sel.month, this.data.meta.day, {
       walking,
-      walking !== null && this.sel.hold && !this.sel.compare,
-    );
+      held: walking !== null && this.sel.hold && !this.sel.compare,
+      morning: this.clock.night ? this.data.meta.slots[0]!.label : null,
+    });
   }
 
   private render(animate: boolean): void {
@@ -308,7 +357,8 @@ export class App {
       // The conventional facade is judged against ambient; still outline where they are.
       this.stage.zones.set(this.manifest.states.find((s) => s.id === this.sel.state) ?? null);
     }
-    this.controls.show(this.sel, data.meta.slots);
+    if (this.clock.night) this.stage.heatmap.mesh.visible = false;
+    this.controls.show(this.sel, data.meta.slots, this.clock.night);
     this.refreshReadout();
     this.syncUrl();
   }
@@ -320,7 +370,7 @@ export class App {
     q.set('slot', this.data!.meta.slots[this.sel.slot]!.label);
     q.set('state', this.sel.state);
     q.set('layer', this.sel.layer);
-    for (const flag of ['compare', 'hold'] as const)
+    for (const flag of ['compare', 'hold', 'freeze'] as const)
       if (this.sel[flag]) q.set(flag, '1');
       else q.delete(flag);
     history.replaceState(null, '', `?${q}`);

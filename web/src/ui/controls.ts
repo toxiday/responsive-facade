@@ -1,4 +1,5 @@
-// The control panel: city, baked day, time (snapping to the baked hours), where the occupant
+// The control panel: city, baked day, time (snapping to the baked hours; it runs on by itself
+// unless frozen, and reads "Night" between days), where the occupant
 // goes (each activity; the list reads "Standing" while they are on open floor), whether the
 // facade holds still until they arrive, the conventional facade for comparison, and the heatmap layer with its legend. Only city-months
 // that have data are offered.
@@ -29,6 +30,8 @@ export interface Selection {
   compare: boolean;
   /** Hold the facade while the occupant walks; it changes once they arrive. */
   hold: boolean;
+  /** Stop the clock (app/clock.ts) on the hour being shown. */
+  freeze: boolean;
 }
 
 const LAYERS: [Layer, string][] = [
@@ -85,6 +88,7 @@ export class Controls {
   private readonly state: HTMLSelectElement;
   private readonly compare: HTMLInputElement;
   private readonly hold: HTMLInputElement;
+  private readonly freeze: HTMLInputElement;
   private readonly layers = new Map<Layer, HTMLButtonElement>();
   private readonly legend: HTMLElement;
   private slots: SlotMeta[] = [];
@@ -112,9 +116,22 @@ export class Controls {
     this.month = el('select', { 'aria-label': 'Day' });
     this.month.addEventListener('change', () => this.onChange({ month: Number(this.month.value) }));
 
-    this.slot = el('input', { type: 'range', min: '0', step: '1', 'aria-label': 'Time of day' });
+    this.slot = el('input', {
+      type: 'range',
+      class: 'slider',
+      min: '0',
+      step: '1',
+      'aria-label': 'Time of day',
+    });
     this.slot.addEventListener('input', () => this.onChange({ slot: Number(this.slot.value) }));
     this.time = el('output', { class: 'time-label' });
+    this.freeze = el('input', { type: 'checkbox' });
+    this.freeze.addEventListener('change', () => this.onChange({ freeze: this.freeze.checked }));
+    const freezeLabel = el('label', {
+      class: 'check',
+      title: 'Unfrozen, each hour shows for 10 s, then a 10 s night',
+    });
+    freezeLabel.append(this.freeze, el('span', {}, 'Freeze'));
 
     this.state = el('select', { 'aria-label': 'Go to' });
     const standing = el('option', { value: '', disabled: '', hidden: '' }, 'Standing');
@@ -147,7 +164,7 @@ export class Controls {
       return r;
     };
     const timeBox = el('div', { class: 'time' });
-    timeBox.append(this.slot, this.time);
+    timeBox.append(this.slot, this.time, freezeLabel);
     this.el.append(
       head,
       row('Place', this.city, this.month),
@@ -161,8 +178,8 @@ export class Controls {
     parent.append(this.el);
   }
 
-  /** Reflect the current selection (and the hours of the day being shown). */
-  show(sel: Selection, slots: SlotMeta[]): void {
+  /** Reflect the current selection (and the hours of the day being shown, or the night). */
+  show(sel: Selection, slots: SlotMeta[], night = false): void {
     this.city.value = sel.city;
     const c = this.cities.find((x) => x.id === sel.city)!;
     this.month.replaceChildren(
@@ -175,7 +192,8 @@ export class Controls {
     this.slot.max = String(slots.length - 1);
     this.slot.value = String(sel.slot);
     const s = slots[sel.slot]!;
-    this.time.textContent = `${s.label} LST`;
+    this.time.textContent = night ? 'Night' : `${s.label} LST`;
+    this.freeze.checked = sel.freeze;
     const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
     this.state.value = listed ? sel.state : '';
     this.hold.checked = sel.hold;

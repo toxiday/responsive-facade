@@ -73,6 +73,11 @@ body {
   height: 64px;
   color: var(--ink);
   pointer-events: none;
+  transition: color 1.5s;
+}
+
+body.night .compass {
+  color: #d9dde4;
 }
 
 /* The demo (app/app.ts): controls top right, clear of the S and W walls in the default view;
@@ -132,15 +137,18 @@ body {
   color: var(--ink);
 }
 
+/* The slider full width; the time and the Freeze box on a line under it. */
 .time {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
 }
 
-.time input {
+.time .slider {
+  grid-column: 1 / -1;
   width: 100%;
+  margin: 0;
   accent-color: var(--accent);
 }
 

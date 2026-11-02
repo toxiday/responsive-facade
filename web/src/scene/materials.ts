@@ -4,6 +4,7 @@ import { Color, MeshStandardMaterial } from 'three';
 
 export const PALETTE = {
   background: new Color('#f3f1ed'),
+  night: new Color('#2b2e35'), // the background at night
   floor: new Color('#d8d2c8'),
   poche: new Color('#6b655d'),
   void: new Color('#3b3834'), // the unmodelled space seen through the entry door and hall
