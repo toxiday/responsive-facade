@@ -123,6 +123,15 @@ def apply_env() -> None:
     _ENV_APPLIED = True
 
 
+def keep_awake() -> None:
+    """Ask Windows not to sleep while this process runs (the display may still turn off). Nothing
+    in the power settings changes; the request ends when the process exits."""
+    if sys.platform == "win32":
+        import ctypes
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+
+
 def check_venv() -> None:
     """Refuse to run under any interpreter but this repo's .venv (VS Code auto-activates
     Facade Designer V2's venv, which would run the bake against the wrong torch)."""

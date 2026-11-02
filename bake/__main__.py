@@ -159,7 +159,7 @@ def cmd_report(args) -> int:
 
 
 def cmd_m2(args) -> int:
-    """Houston December end to end: solve, baseline, verify, pack, report."""
+    """End to end for --city/--months: solve, baseline, verify, pack, report."""
     for step in (cmd_solve, cmd_baseline, cmd_verify, cmd_pack, cmd_report):
         if step(args):
             return 1
@@ -188,6 +188,8 @@ def main(argv=None) -> int:
         q.add_argument("--workers", type=int, default=20, help="Radiance workers")
         q.add_argument("--force", action="store_true", help="redo finished work")
     args = ap.parse_args(argv)
+    if args.cmd in ("bench", "solve", "baseline", "verify", "m2"):
+        config.keep_awake()  # long runs: no sleep until they finish
     cmds = {"smoke": cmd_smoke, "slots": cmd_slots, "m1": cmd_m1,
             "manifest": cmd_manifest, "fixtures": cmd_fixtures, "bench": cmd_bench,
             "solve": cmd_solve, "baseline": cmd_baseline, "verify": cmd_verify,
