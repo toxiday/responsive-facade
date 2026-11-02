@@ -42,8 +42,8 @@ const SHOTS = [
 ].filter(([name]) => !args.only || name.startsWith(args.only));
 
 // The demo (`--only app`): a few selections, and one change frozen mid-way through the facade
-// animation (the third entry runs in the page after load). Time is frozen in all but the night
-// shots, so the clock cannot move a view on.
+// animation (the third entry runs in the page after load). Time is frozen and the schedule off
+// in all but the night and schedule shots, so neither can move a view on.
 function appShots() {
   const q = (state, slot, extra = '') =>
     `?city=houston&month=12&state=${state}&slot=${slot}${extra}`;
@@ -54,6 +54,17 @@ function appShots() {
     ['app-night', '?city=houston&month=12', lastHourThen(8)],
     ['app-night-tv', q('couch_tv', '16:30'), lastHourThen(8)],
     ['app-night-morning', '?city=houston&month=12', lastHourThen(18)],
+    // The daily schedule from breakfast (Houston Dec): reading, the chaise, cooking, TV.
+    ...[
+      ['0930', 7],
+      ['1330', 32],
+      ['1530', 49.5],
+      ['1630', 61],
+    ].map(([name, sec]) => [
+      `app-schedule-${name}`,
+      '?city=houston&month=12&slot=08:30',
+      `window.__rf.app.advance(${sec})`,
+    ]),
     // Time running: the thumb partway from one hour's line to the next.
     ['app-timebar-mid', '?city=houston&month=12&slot=11:30', 'window.__rf.app.advance(2.5)'],
   ];
@@ -108,7 +119,7 @@ function appShots() {
   return [
     ...frozen.map(([name, query, action]) => [
       name,
-      `${query}${query === '?' ? '' : '&'}freeze=1`,
+      `${query}${query === '?' ? '' : '&'}freeze=1&schedule=0`,
       action,
     ]),
     ...night,

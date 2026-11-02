@@ -16,6 +16,9 @@ export const barHours = (nSlots: number) => nSlots + NIGHT_S / HOUR_S;
 export class DayClock {
   /** False while time is frozen. */
   running = true;
+  /** Wait at the end of the hour (or night) instead of moving on: the schedule holds the clock
+   * there until the occupant reaches the next hour's activity. */
+  holdAtEnd = false;
   night = false;
   /** Seconds into the hour being shown, or into the night. */
   private t = 0;
@@ -36,6 +39,11 @@ export class DayClock {
     return (this.night ? nSlots : slot) + this.t / HOUR_S;
   }
 
+  /** Seconds left in the hour being shown, or in the night. */
+  get left(): number {
+    return (this.night ? NIGHT_S : HOUR_S) - this.t;
+  }
+
   /** Show the current hour afresh (the visitor picked one, or unfroze time); ends a night. */
   restart(): void {
     this.t = 0;
@@ -48,6 +56,8 @@ export class DayClock {
     this.level = this.night ? Math.max(0, this.level - step) : Math.min(1, this.level + step);
     if (!this.running) return null;
     this.t += dt;
+    const length = this.night ? NIGHT_S : HOUR_S;
+    if (this.holdAtEnd && this.t >= length) this.t = length - 1e-9;
     if (!this.night) {
       if (this.t < HOUR_S) return null;
       this.t -= HOUR_S;

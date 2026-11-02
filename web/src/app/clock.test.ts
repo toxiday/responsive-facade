@@ -50,6 +50,15 @@ describe('day clock', () => {
     expect(barHours(n)).toBe(n + NIGHT_S / HOUR_S);
   });
 
+  it('can wait at the end of the hour, then move on once let go', () => {
+    const c = new DayClock();
+    c.holdAtEnd = true;
+    expect(run(c, HOUR_S * 3, 1, 5)).toBe(1);
+    expect(c.left).toBeLessThan(1e-6);
+    c.holdAtEnd = false;
+    expect(run(c, 0.1, 1, 5)).toBe(2);
+  });
+
   it('stands still while frozen', () => {
     const c = new DayClock();
     c.running = false;

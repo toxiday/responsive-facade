@@ -17,8 +17,8 @@ import { pathLength, type Pt, type WalkGrid } from './walk';
 
 export const WALK_SPEED = 1.3; // m/s
 const TURN_RATE = 540; // deg/s
-const SIT_S = 0.7; // turning round and lowering onto a seat
-const RISE_S = 0.5;
+export const SIT_S = 0.7; // turning round and lowering onto a seat
+export const RISE_S = 0.5;
 
 export type Mode = 'standing' | 'walking' | 'sitting' | 'seated' | 'rising';
 

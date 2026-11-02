@@ -1,34 +1,40 @@
 // The demo. Pick a city, a baked day and an hour; click anywhere in the room and the occupant
 // walks there (M4): a piece of furniture takes its nearest seat, open floor a standing spot.
 // The facade chases them as they walk and settles on the seat's activity when they arrive (or,
-// with "Hold until they arrive", keeps its state for the whole walk); on the sofa, clicking the TV turns it on and off. The "Go to" list walks them to an
-// activity. The conventional facade can be shown instead for comparison. Changes play as a
-// curtain. Time runs on by itself, 5 s a baked hour with a 10 s night between days, unless
-// frozen (clock.ts). The selection lives in the URL, so a view can be linked (and shot by
-// scripts/shoot.mjs); a linked state puts the occupant straight there.
+// with "Hold until they arrive", keeps its state for the whole walk); on the sofa, clicking the
+// TV turns it on and off. The "Go to" list walks them to an activity. The conventional facade
+// can be shown instead for comparison. Changes play as a curtain. Time runs on by itself, 5 s a
+// baked hour with a 10 s night between days, unless frozen (clock.ts). The selection lives in
+// the URL, so a view can be linked (and shot by scripts/shoot.mjs).
 //
-// On first load the state is ambient, with the occupant just in from the entry door.
+// By default the occupant follows a daily schedule (schedule.ts), starting at the hour's
+// activity; a click, the "Go to" list or the TV takes over from it, and the box unticks. With
+// the schedule off, a linked state puts the occupant straight there; otherwise they start
+// just in from the entry door, in ambient.
 
 import { Object3D, Raycaster, Vector2 } from 'three';
 import type { FurnitureItem, Manifest } from '../data/manifest';
 import type { MonthData } from '../data/month';
 import { MonthStore, type DataIndex } from '../data/store';
-import { OccupantController } from '../occupant/controller';
+import { OccupantController, RISE_S, SIT_S, WALK_SPEED } from '../occupant/controller';
 import { Figure } from '../occupant/figure';
 import { floorTarget, itemTarget, stateTarget, tvSeat, type Target } from '../occupant/targets';
-import { WalkGrid, type Pt } from '../occupant/walk';
+import { pathLength, WalkGrid, type Pt } from '../occupant/walk';
 import { withEdges } from '../scene/edges';
 import { Stage } from '../scene/stage';
 import { Controls, type CityChoice, type Choice, type Selection } from '../ui/controls';
 import { Readout } from '../ui/readout';
 import { TimeBar } from '../ui/timebar';
-import { DayClock } from './clock';
+import { DayClock, HOUR_S, NIGHT_S } from './clock';
 import { showRecord, type Layer, type RecordView } from './record';
+import { MIN_STAY_S, nextPlanned, plannedState, scheduleGoal } from './schedule';
 
 const LAYER_IDS: Layer[] = ['none', 'radiance', 'surrogate'];
 /** A few steps in from the entry door, clear of the open door leaf, facing into the room. */
 const ENTRY: Pt = { x: 4.75, y: 8.8 };
 const ENTRY_HEADING = 225;
+/** Allowance for turning on the spot when the schedule times a walk. */
+const TURN_S = 0.3;
 
 export class App {
   readonly stage: Stage;
@@ -47,6 +53,9 @@ export class App {
   /** The daylight level and night as last put on the stage. */
   private daylight = 1;
   private night = false;
+  /** The state the schedule last sent the occupant to; walk times between states, by pair. */
+  private scheduled: string | null = null;
+  private readonly walkTimes = new Map<string, number>();
   private sel!: Selection;
   private data: MonthData | null = null;
   private view: RecordView | null = null;
@@ -91,7 +100,8 @@ export class App {
     this.readout = new Readout(ui);
     this.controls.onChange = (patch) => {
       if (patch.state !== undefined) return this.goToState(patch.state);
-      if (patch.hold !== undefined) return void this.setOptions(patch);
+      if (patch.hold !== undefined || patch.schedule !== undefined)
+        return void this.setOptions(patch);
       void this.set(patch);
     };
     this.timebar = new TimeBar(ui);
@@ -124,13 +134,17 @@ export class App {
       compare: params.get('compare') === '1' || params.get('state') === 'baseline',
       hold: params.get('hold') === '1',
       freeze: params.get('freeze') === '1',
+      schedule: params.get('schedule') !== '0',
     };
     this.data = await this.store.get(this.sel.city, this.sel.month);
     const wanted = params.get('slot');
     const byLabel = this.data.meta.slots.findIndex((s) => s.label === wanted);
     this.sel.slot = byLabel >= 0 ? byLabel : this.highestSun(this.data);
-    // A linked state puts the occupant straight there.
-    const linked = params.get('state');
+    // On schedule, the occupant starts at the hour's activity; off it, a linked state puts them
+    // straight there.
+    const linked = this.sel.schedule
+      ? plannedState(this.data.meta.slots[this.sel.slot]!.label)
+      : params.get('state');
     const t = linked ? stateTarget(this.manifest, this.grid, linked) : null;
     if (t) {
       this.occupant.placeAt(t);
@@ -159,11 +173,13 @@ export class App {
 
   /**
    * The options that change no view. Hold: the facade keeps its state while the occupant walks,
-   * or chases them again from their next step. Freeze: the clock stops at the start of the
+   * or chases them again from their next step. Schedule: the occupant follows the daily
+   * schedule again (from where they are), or stays put. Freeze: the clock stops at the start of the
    * hour shown, or runs on from there; frozen at night, the day starts. Otherwise nothing is
    * redrawn, so a curtain already moving finishes as it was.
    */
-  setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze'>>): Promise<void> {
+  setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze' | 'schedule'>>): Promise<void> {
+    if (patch.schedule) this.scheduled = null; // walk to this hour's activity
     this.pending = this.pending.then(() => {
       this.sel = { ...this.sel, ...patch };
       if (patch.freeze !== undefined) {
@@ -184,6 +200,7 @@ export class App {
 
   /** Walk the occupant to where a state is had (ambient: no walk, just the state). */
   goToState(stateId: string): void {
+    this.takeOver();
     if (stateId === 'ambient') {
       void this.set({ state: 'ambient' });
       return;
@@ -195,6 +212,7 @@ export class App {
   /** Click (or tap) at client coordinates, as the pointer handler does. */
   clickAt(clientX: number, clientY: number): void {
     const { item, point } = this.pick(clientX, clientY);
+    if (item || point) this.takeOver();
     if (item?.click === 'tv') {
       if (!this.occupant.toggleTv()) {
         const t = tvSeat(this.manifest, this.grid);
@@ -223,6 +241,63 @@ export class App {
     this.stage.invalidate();
   }
 
+  /** The visitor sends the occupant somewhere: that takes over from the schedule. */
+  private takeOver(): void {
+    if (!this.sel.schedule) return;
+    this.sel = { ...this.sel, schedule: false }; // at once, so the next frame doesn't follow it
+    void this.setOptions({ schedule: false });
+  }
+
+  private get labels(): string[] {
+    return this.data!.meta.slots.map((s) => s.label);
+  }
+
+  /** True while the occupant walks to the schedule's next activity. */
+  private walkingOn(): boolean {
+    const next = nextPlanned(this.labels, this.hour, this.clock.night);
+    const o = this.occupant;
+    return next !== null && o.moving && o.destination?.stateId === next;
+  }
+
+  /** On schedule: send the occupant on to the state the schedule has for now (schedule.ts). */
+  private followSchedule(): void {
+    const goal = scheduleGoal(
+      this.labels,
+      this.hour,
+      this.clock.night,
+      this.clock.left,
+      (a, b) => this.walkSeconds(a, b),
+      this.clock.night ? NIGHT_S : HOUR_S - MIN_STAY_S,
+    );
+    if (goal === this.scheduled) return;
+    this.scheduled = goal;
+    const o = this.occupant;
+    if ((o.moving ? o.destination?.stateId : o.stateId) === goal) return;
+    const t = stateTarget(this.manifest, this.grid, goal);
+    if (t) this.walkTo(t);
+  }
+
+  /** About how long the walk from one state's spot to another's takes, seat to seat. */
+  private walkSeconds(from: string, to: string): number {
+    const key = `${from}>${to}`;
+    let s = this.walkTimes.get(key);
+    if (s === undefined) {
+      const a = stateTarget(this.manifest, this.grid, from);
+      const b = stateTarget(this.manifest, this.grid, to);
+      const spot = (t: Target) => (t.kind === 'seat' ? t.approach : t.at);
+      const path = a && b ? this.grid.path(spot(a), spot(b)) : null;
+      s =
+        a && b && path
+          ? pathLength(path) / WALK_SPEED +
+            (a.kind === 'seat' ? RISE_S : 0) +
+            (b.kind === 'seat' ? SIT_S : 0) +
+            TURN_S
+          : 0;
+      this.walkTimes.set(key, s);
+    }
+    return s;
+  }
+
   private walkTo(t: Target): void {
     if (this.occupant.goTo(t)) {
       this.refreshReadout();
@@ -237,6 +312,8 @@ export class App {
       const n = this.data.nSlots;
       // The clock waits while the time bar's thumb is held.
       this.clock.running = !this.sel.freeze && !this.timebar.dragging;
+      // On schedule, the hour waits at its end for the occupant to reach the next activity.
+      this.clock.holdAtEnd = this.sel.schedule && this.walkingOn();
       const next = this.clock.update(dt, this.hour, n);
       if (next !== null) {
         this.hour = next;
@@ -249,6 +326,7 @@ export class App {
         document.body.classList.toggle('night', this.night);
         if (this.night) this.showNight();
       }
+      if (this.sel.schedule) this.followSchedule();
       const k = this.clock.daylight;
       if (k !== this.daylight) {
         this.daylight = k;
@@ -395,6 +473,8 @@ export class App {
     for (const flag of ['compare', 'hold', 'freeze'] as const)
       if (this.sel[flag]) q.set(flag, '1');
       else q.delete(flag);
+    if (this.sel.schedule) q.delete('schedule');
+    else q.set('schedule', '0');
     history.replaceState(null, '', `?${q}`);
   }
 }
