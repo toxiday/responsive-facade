@@ -10,6 +10,9 @@ CLAUDE.md
 # bake scratch, Radiance runs, logs, caches
 bake/work/
 
+# review renders and reports stay local too (Tony, 2026-11-01)
+bake/reports/
+
 # Python
 __pycache__/
 *.pyc
