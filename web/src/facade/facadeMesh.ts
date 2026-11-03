@@ -22,9 +22,11 @@
 // Shade mode (setFrame; Tony, 2026-11-02): the conventional facade's windows, each with a
 // roller shade (shade_optimizer/). Inside the frame's windows a closed panel is shade fabric,
 // a thin sheet in the reveal on the room side of the glass, instead of wall, and the glass
-// stays. The curtain moves the fabric as it moves panels: a drop unrolls it down from the
-// window head, a raise rolls it up. The shadow panels still cast the covered rows' shadow,
-// as Radiance simulates them (closed panels at the wall plane).
+// stays. The shadow panels still cast the covered rows' shadow, as Radiance simulates them
+// (closed panels at the wall plane). Shades don't move like the curtain (Tony: smoothly, from
+// the previous state to the new one): every shade's bottom edge glides from where it is shown
+// to its new drop, all together over SHADE_MS, eased, the fabric unrolling or rolling up and
+// the sun patches following. A change that arrives mid-move starts from where the shades are.
 
 import {
   BoxGeometry,
@@ -90,6 +92,16 @@ interface WallMeshes {
 const ZERO = new Matrix4().makeScale(0, 0, 0);
 
 const CURTAIN_MS = 900;
+/** How long the shades take to move to a new design (shade mode), however far. */
+export const SHADE_MS = 1500;
+
+/** One column of a frame window (shade mode): its rows, top to bottom, under one shade. */
+interface ShadeRun {
+  w: WallMeshes;
+  col: number;
+  r0: number;
+  r1: number;
+}
 
 /** One panel moving between wall and window (animateTo). */
 interface Flip {
@@ -98,8 +110,6 @@ interface Flip {
   toWindow: boolean;
   /** When the edge reaches it, in rows: from the bottom for a raise, from the top for a drop. */
   order: number;
-  /** In one of the frame's windows (shade mode): the fabric moves, not a wall panel. */
-  shade: boolean;
 }
 
 const _p = new Vector3();
@@ -126,6 +136,14 @@ export class FacadeMesh {
   private frame: Uint8Array | null = null;
   private flips: Flip[] = [];
   private flipStart = 0;
+  /** Shade mode: each window column, and its shade's edge (rows below the window head) as
+   * shown, and moving from and to (glide). */
+  private runs: ShadeRun[] = [];
+  private edges: number[] = [];
+  private edgesFrom: number[] = [];
+  private edgesTo: number[] = [];
+  private glideStart = 0;
+  private gliding = false;
   // Screen-space width, so it needs the viewport size (setLineResolution).
   private readonly outline = new LineMaterial({
     color: PALETTE.accent,
@@ -274,6 +292,7 @@ export class FacadeMesh {
   /** Show a design at once: 2048 values, wall-major S,N,E,W, row 0 = ceiling, 1 = window. */
   setBits(bits: ArrayLike<number>): void {
     this.flips = [];
+    this.gliding = false;
     this.bits = Uint8Array.from(bits, (v) => (v ? 1 : 0));
     this.applyAll();
   }
@@ -291,8 +310,54 @@ export class FacadeMesh {
     if (same) return false;
     this.frame = next;
     this.flips = [];
+    this.gliding = false;
+    this.runs = [];
+    if (next)
+      for (const [side, w] of this.walls)
+        for (let col = 0; col < COLS; col++)
+          for (let r = 0; r < ROWS;) {
+            if (!next[bitIndex(side, r, col)]) {
+              r++;
+              continue;
+            }
+            const r0 = r;
+            while (r < ROWS && next[bitIndex(side, r, col)]) r++;
+            this.runs.push({ w, col, r0, r1: r - 1 });
+          }
     this.applyAll();
     return true;
+  }
+
+  /** Each shade's edge in a design: the closed rows from the window head down. */
+  private edgesOf(bits: Uint8Array): number[] {
+    return this.runs.map((run) => {
+      let n = 0;
+      while (run.r0 + n <= run.r1 && !bits[bitIndex(run.w.side, run.r0 + n, run.col)]) n++;
+      return n;
+    });
+  }
+
+  /** The shades' edges as shown at `now` (ms). */
+  private edgesAt(now: number): number[] {
+    if (!this.gliding) return this.edges.slice();
+    const k = ease(Math.min(1, Math.max(0, (now - this.glideStart) / SHADE_MS)));
+    return this.edgesFrom.map((a, i) => a + (this.edgesTo[i]! - a) * k);
+  }
+
+  /** Draw the shades at their current edges: fabric and shadow down to each edge. */
+  private drawShades(): void {
+    this.runs.forEach((run, k) => {
+      const e = this.edges[k]!;
+      for (let r = run.r0; r <= run.r1; r++) {
+        const i = r * COLS + run.col;
+        const [, , shade, cloth] = run.w.layers[i]!;
+        const cover = Math.min(1, Math.max(0, e - (r - run.r0))); // of this row, from its top
+        run.w.fabric.setMatrixAt(i, hung(cloth, cover));
+        run.w.shadow.setMatrixAt(i, hung(shade, cover));
+      }
+    });
+    for (const w of this.walls.values())
+      for (const mesh of [w.fabric, w.shadow]) mesh.instanceMatrix.needsUpdate = true;
   }
 
   /** True in shade mode. */
@@ -302,8 +367,19 @@ export class FacadeMesh {
 
   /** Change to a design with the changed panels moving (see the header); `now` in ms. */
   animateTo(bits: ArrayLike<number>, now: number): void {
-    if (this.flips.length) this.applyAll(); // a change still running jumps to its end
     const next = Uint8Array.from(bits, (v) => (v ? 1 : 0));
+    if (this.frame) {
+      // The shades glide on from where they are shown (outside the windows is always wall).
+      this.edgesFrom = this.edgesAt(now);
+      this.edges = this.edgesFrom.slice();
+      this.bits = next;
+      this.edgesTo = this.edgesOf(next);
+      this.glideStart = now;
+      this.gliding = true;
+      for (const w of this.walls.values()) this.updateGhost(w);
+      return;
+    }
+    if (this.flips.length) this.applyAll(); // a change still running jumps to its end
     const flips: Flip[] = [];
     for (const [side, w] of this.walls)
       for (let i = 0; i < PANELS_PER_WALL; i++) {
@@ -312,8 +388,7 @@ export class FacadeMesh {
         if (next[b] === this.bits[b]) continue;
         const toWindow = next[b] === 1;
         // Row 0 is at the ceiling: a raise starts at the bottom, a drop at the top.
-        const shade = this.frame?.[b] === 1;
-        flips.push({ w, i, toWindow, order: toWindow ? ROWS - 1 - row : row, shade });
+        flips.push({ w, i, toWindow, order: toWindow ? ROWS - 1 - row : row });
       }
     this.bits = next;
     for (const w of this.walls.values()) this.updateGhost(w);
@@ -323,30 +398,35 @@ export class FacadeMesh {
 
   /** True while a change is still playing. */
   get animating(): boolean {
-    return this.flips.length > 0;
+    return this.flips.length > 0 || this.gliding;
   }
 
-  /** Advance the moving panels to `now` (ms); true while the facade still needs frames. */
+  /** Advance the moving panels or shades to `now` (ms); true while the facade still needs
+   * frames. */
   tick(now: number): boolean {
+    if (this.gliding) {
+      this.edges = this.edgesAt(now);
+      this.drawShades();
+      if (now - this.glideStart >= SHADE_MS) {
+        this.gliding = false;
+        this.applyAll();
+      }
+      return true; // the last step still has to be drawn
+    }
     if (!this.flips.length) return false;
     const t = Math.min(1, Math.max(0, (now - this.flipStart) / CURTAIN_MS));
     const running = t < 1;
     const edge = ROWS * ease(t); // rows the edge has crossed
     for (const f of this.flips) {
       const p = Math.min(1, Math.max(0, edge - f.order)); // how far it has crossed this one
-      const [panel, pane, shade, cloth] = f.w.layers[f.i]!;
+      const [panel, pane, shade] = f.w.layers[f.i]!;
       const cover = f.toWindow ? 1 - p : p; // how much of the panel hangs down
+      f.w.solid.setMatrixAt(f.i, hung(panel, cover));
       f.w.shadow.setMatrixAt(f.i, hung(shade, cover));
-      if (f.shade) {
-        f.w.fabric.setMatrixAt(f.i, hung(cloth, cover));
-      } else {
-        f.w.solid.setMatrixAt(f.i, hung(panel, cover));
-        f.w.glass.setMatrixAt(f.i, f.toWindow || p < 1 ? pane : ZERO);
-      }
+      f.w.glass.setMatrixAt(f.i, f.toWindow || p < 1 ? pane : ZERO);
     }
     for (const w of this.walls.values())
-      for (const mesh of [w.solid, w.glass, w.shadow, w.fabric])
-        mesh.instanceMatrix.needsUpdate = true;
+      for (const mesh of [w.solid, w.glass, w.shadow]) mesh.instanceMatrix.needsUpdate = true;
     if (!running) {
       this.flips = [];
       this.applyAll();
@@ -375,6 +455,7 @@ export class FacadeMesh {
       }
       this.updateGhost(w);
     }
+    this.edges = this.edgesOf(this.bits);
   }
 
   private updateGhost(w: WallMeshes): void {

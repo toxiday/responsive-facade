@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { Manifest } from '../data/manifest';
-import { FacadeMesh } from './facadeMesh';
+import { FacadeMesh, SHADE_MS } from './facadeMesh';
 import { PANELS_PER_WALL, bitIndex } from './geometry';
 
 const manifest = JSON.parse(
@@ -168,21 +168,71 @@ describe('FacadeMesh shade mode', () => {
     expect(shown(f, 'fabric', 4)).toBe(false);
   });
 
-  it('rolls the shade up from its bottom edge, the glass staying, and back to panels', () => {
+  /** A row's fabric fully down (a little taller than the panel: instances overlap). */
+  const fullFabric = (() => {
+    const f = new FacadeMesh(manifest.room);
+    f.setFrame(frame);
+    f.setBits(lowered(8));
+    const m = new Matrix4();
+    f.walls.get('S')!.fabric.getMatrixAt(5 * 32 + 9, m);
+    return extent(m).h;
+  })();
+  /** How far down the shade is shown, in rows below the window head (row 5). */
+  const shadeEdge = (f: FacadeMesh) => {
+    let e = 0;
+    for (let r = 5; r <= 12; r++) {
+      const m = new Matrix4();
+      f.walls.get('S')!.fabric.getMatrixAt(r * 32 + 9, m);
+      if (isZero(m)) break;
+      e += extent(m).h / fullFabric;
+    }
+    return e;
+  };
+
+  it('glides each shade from where it is to its new drop, smoothly, over SHADE_MS', () => {
     const f = new FacadeMesh(manifest.room);
     f.setFrame(frame);
     f.setBits(lowered(3));
+    expect(shadeEdge(f)).toBeCloseTo(3, 6);
     f.animateTo(lowered(0), 0);
-    const tops = new Set<number>();
-    for (let t = 0; t <= 1000; t += 10) {
+    let last = 3;
+    for (let t = 0; t < SHADE_MS; t += 25) {
       f.tick(t);
+      const e = shadeEdge(f);
+      expect(e).toBeLessThanOrEqual(last + 1e-9); // only ever up
+      expect(last - e).toBeLessThan(0.12); // no jumps: at most ~0.1 row a frame
       expect(shown(f, 'glass', 6)).toBe(true);
-      const m = new Matrix4();
-      f.walls.get('S')!.fabric.getMatrixAt(6 * 32 + 9, m);
-      if (!isZero(m)) tops.add(Math.round(extent(m).top * 1e6));
+      last = e;
     }
-    expect(tops.size).toBe(1); // it shortens into its top edge
-    expect([5, 6, 7].some((r) => shown(f, 'fabric', r))).toBe(false);
+    expect(f.animating).toBe(true);
+    f.tick(SHADE_MS);
+    expect(f.animating).toBe(false);
+    expect(shadeEdge(f)).toBe(0);
+    // Even a one-row move takes the whole time, rather than snapping.
+    f.animateTo(lowered(1), 0);
+    f.tick(SHADE_MS / 2);
+    expect(shadeEdge(f)).toBeCloseTo(0.5, 6);
+  });
+
+  it('starts a new move from where an interrupted one has got to', () => {
+    const f = new FacadeMesh(manifest.room);
+    f.setFrame(frame);
+    f.setBits(lowered(0));
+    f.animateTo(lowered(8), 0);
+    f.tick(SHADE_MS / 2);
+    const mid = shadeEdge(f);
+    expect(mid).toBeCloseTo(4, 6);
+    f.animateTo(lowered(2), SHADE_MS / 2); // changed its mind halfway down
+    f.tick(SHADE_MS / 2 + 1);
+    expect(Math.abs(shadeEdge(f) - mid)).toBeLessThan(0.01);
+    f.tick(SHADE_MS * 2);
+    expect(shadeEdge(f)).toBeCloseTo(2, 6);
+  });
+
+  it('goes back to panels', () => {
+    const f = new FacadeMesh(manifest.room);
+    f.setFrame(frame);
+    f.setBits(lowered(3));
     expect(f.setFrame(null)).toBe(true);
     f.setBits(lowered(3));
     expect(shown(f, 'fabric', 5)).toBe(false);
