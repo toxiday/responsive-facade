@@ -127,3 +127,65 @@ describe('FacadeMesh.animateTo', () => {
     expect(m.equals(d)).toBe(true);
   });
 });
+
+describe('FacadeMesh shade mode', () => {
+  // One S window, rows 5-12 by cols 7-12, as in the conventional facade.
+  const frame = new Uint8Array(4 * PANELS_PER_WALL);
+  for (let r = 5; r <= 12; r++) for (let c = 7; c <= 12; c++) frame[bitIndex('S', r, c)] = 1;
+  /** The window with its shade down `n` rows. */
+  const lowered = (n: number) => {
+    const bits = frame.slice();
+    for (let r = 5; r < 5 + n; r++) for (let c = 7; c <= 12; c++) bits[bitIndex('S', r, c)] = 0;
+    return bits;
+  };
+  const shown = (f: FacadeMesh, mesh: 'solid' | 'glass' | 'shadow' | 'fabric', r: number) => {
+    const m = new Matrix4();
+    f.walls.get('S')![mesh].getMatrixAt(r * 32 + 9, m);
+    return !isZero(m);
+  };
+
+  it('covers the top rows with shade fabric, keeps the glass and shades the floor', () => {
+    const f = new FacadeMesh(manifest.room);
+    expect(f.setFrame(frame)).toBe(true);
+    expect(f.setFrame(frame)).toBe(false);
+    f.setBits(lowered(3));
+    for (const r of [5, 6, 7]) {
+      expect([shown(f, 'fabric', r), shown(f, 'glass', r), shown(f, 'shadow', r)]).toEqual([
+        true,
+        true,
+        true,
+      ]);
+      expect(shown(f, 'solid', r)).toBe(false);
+    }
+    for (const r of [8, 12]) {
+      expect([shown(f, 'fabric', r), shown(f, 'glass', r), shown(f, 'shadow', r)]).toEqual([
+        false,
+        true,
+        false,
+      ]);
+    }
+    expect(shown(f, 'solid', 4)).toBe(true); // wall above the window head
+    expect(shown(f, 'fabric', 4)).toBe(false);
+  });
+
+  it('rolls the shade up from its bottom edge, the glass staying, and back to panels', () => {
+    const f = new FacadeMesh(manifest.room);
+    f.setFrame(frame);
+    f.setBits(lowered(3));
+    f.animateTo(lowered(0), 0);
+    const tops = new Set<number>();
+    for (let t = 0; t <= 1000; t += 10) {
+      f.tick(t);
+      expect(shown(f, 'glass', 6)).toBe(true);
+      const m = new Matrix4();
+      f.walls.get('S')!.fabric.getMatrixAt(6 * 32 + 9, m);
+      if (!isZero(m)) tops.add(Math.round(extent(m).top * 1e6));
+    }
+    expect(tops.size).toBe(1); // it shortens into its top edge
+    expect([5, 6, 7].some((r) => shown(f, 'fabric', r))).toBe(false);
+    expect(f.setFrame(null)).toBe(true);
+    f.setBits(lowered(3));
+    expect(shown(f, 'fabric', 5)).toBe(false);
+    expect(shown(f, 'solid', 5)).toBe(true);
+  });
+});

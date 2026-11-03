@@ -2,8 +2,9 @@
 // walks there (M4): a piece of furniture takes its nearest seat, open floor a standing spot.
 // By default the facade keeps its state while they walk and changes once they arrive ("Freeze
 // until arrival", Tony); unticked, it chases them as they walk. On the sofa, clicking the
-// TV turns it on and off. The "Go to" list walks them to an activity. The conventional facade
-// can be shown instead for comparison. Changes play as a curtain. Time runs on by itself, 5 s a
+// TV turns it on and off. The "Go to" list walks them to an activity. The conventional windows
+// with operable shades can be shown instead (?shades=1, shade_optimizer/), solved the same way
+// for each activity and hour. Changes play as a curtain. Time runs on by itself, 5 s a
 // baked hour with a 5 s night between days, unless paused (clock.ts); the sun glides on through
 // each hour (glideSun). The demo always opens at
 // 08:30 (Tony), or the first baked hour after it; only a paused link (?freeze=1) opens at its
@@ -79,6 +80,8 @@ export class App {
   private readonly walkTimes = new Map<string, number>();
   private sel!: Selection;
   private data: MonthData | null = null;
+  /** The day's shade records, while the shades are shown. */
+  private shadesData: MonthData | null = null;
   private view: RecordView | null = null;
   private pending: Promise<void> = Promise.resolve();
 
@@ -96,6 +99,7 @@ export class App {
         months: index.months[c.id]!.map((m) => ({
           month: m,
           day: c.months.find((x) => x.month === m)?.day ?? 1,
+          shades: index.shades?.[c.id]?.includes(m) ?? false,
         })),
       }));
     if (!this.cities.length) throw new Error('no baked data (data/index.json is empty)');
@@ -152,7 +156,8 @@ export class App {
       slot: -1, // resolved once the day is loaded
       state: 'ambient',
       layer: layer && LAYER_IDS.includes(layer) ? layer : 'none',
-      compare: params.get('compare') === '1' || params.get('state') === 'baseline',
+      // compare=1 showed the conventional facade, which the shades replace.
+      shades: params.get('shades') === '1' || params.get('compare') === '1',
       hold: params.get('hold') !== '0',
       freeze: params.get('freeze') === '1',
       routine: ROUTINES.includes(params.get('routine') as Routine)
@@ -164,6 +169,7 @@ export class App {
     const seed = Number(params.get('seed'));
     this.seed = Number.isInteger(seed) && params.has('seed') ? seed : (Math.random() * 2 ** 31) | 0;
     this.data = await this.store.get(this.sel.city, this.sel.month);
+    this.sel.shades = await this.loadShades(this.sel);
     const slots = this.data.meta.slots;
     const wanted = this.sel.freeze ? params.get('slot') : null;
     const byLabel = slots.findIndex((s) => s.label === wanted);
@@ -193,6 +199,7 @@ export class App {
         next.slot = patch.slot ?? (same >= 0 ? same : this.highestSun(this.data));
       }
       next.slot = Math.min(this.data!.nSlots - 1, Math.max(0, next.slot));
+      next.shades = await this.loadShades(next);
       this.sel = next;
       this.render(true);
     });
@@ -225,6 +232,19 @@ export class App {
       this.syncUrl();
     });
     return this.pending;
+  }
+
+  /** The shade records for a selection that shows the shades; false where there are none. */
+  private async loadShades(sel: Selection): Promise<boolean> {
+    const has = this.cities
+      .find((c) => c.id === sel.city)
+      ?.months.find((m) => m.month === sel.month)?.shades;
+    if (!sel.shades || !has) {
+      this.shadesData = null;
+      return false;
+    }
+    this.shadesData = await this.store.get(sel.city, sel.month, 'shades');
+    return true;
   }
 
   /** Walk the occupant to where a state is had (ambient: no walk, just the state). */
@@ -500,28 +520,22 @@ export class App {
         : null;
     this.readout.show(this.manifest, this.view, city.label, this.sel.month, this.data.meta.day, {
       walking,
-      held: walking !== null && this.sel.hold && !this.sel.compare,
+      held: walking !== null && this.sel.hold,
       morning: this.clock.night ? this.data.meta.slots[0]!.label : null,
     });
   }
 
   private render(animate: boolean): void {
-    const data = this.data!;
-    const shown = this.sel.compare ? 'baseline' : this.sel.state;
     this.view = showRecord(
       this.stage,
       this.manifest,
-      data,
+      this.sel.shades && this.shadesData ? this.shadesData : this.data!,
       this.sel.slot,
-      shown,
+      this.sel.state,
       this.sel.layer,
       animate,
     );
     this.sunAt = NaN; // showRecord put the sun at the baked hour; glide it on from there
-    if (this.sel.compare) {
-      // The conventional facade is judged against ambient; still outline where they are.
-      this.stage.zones.set(this.manifest.states.find((s) => s.id === this.sel.state) ?? null);
-    }
     if (this.clock.night) this.stage.heatmap.mesh.visible = false;
     this.hour = this.sel.slot;
     this.controls.show(this.sel);
@@ -537,9 +551,10 @@ export class App {
     q.set('slot', this.data!.meta.slots[this.sel.slot]!.label);
     q.set('state', this.sel.state);
     q.set('layer', this.sel.layer);
-    for (const flag of ['compare', 'freeze'] as const)
+    for (const flag of ['shades', 'freeze'] as const)
       if (this.sel[flag]) q.set(flag, '1');
       else q.delete(flag);
+    q.delete('compare');
     if (this.sel.hold)
       q.delete('hold'); // on unless the link says 0
     else q.set('hold', '0');

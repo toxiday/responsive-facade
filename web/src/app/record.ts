@@ -1,10 +1,12 @@
 // Puts one baked record on the stage: the facade (panels turning, or at once), the sun, the
 // daylight fill, the heatmap layer, the TV and the occupant's zone. Shared by the app and the
-// ?debug=bake review view.
+// ?debug=bake review view. A shade file's record (data/month.ts) puts the facade in shade
+// mode, the conventional windows with their shades; a change between modes shows at once.
 
 import type { Manifest, OccupantState } from '../data/manifest';
 import { cellIndex, cellOf } from '../data/grid';
-import type { MonthData, RecordMetrics, SlotMeta } from '../data/month';
+import { bitsFromHex, type MonthData, type RecordMetrics, type SlotMeta } from '../data/month';
+import { SIDES } from '../facade/geometry';
 import { litMask } from '../facade/sunlight';
 import { indirectLux } from '../scene/indirect';
 import type { Stage } from '../scene/stage';
@@ -15,6 +17,13 @@ export type Layer = 'radiance' | 'surrogate' | 'none';
 export const BAND: [number, number] = [0.75, 1.25];
 export const GLARE_LUX = 3000;
 
+/** The shades of a shade record: rows lowered, and each window's height and wall. */
+export interface ShadeView {
+  drops: number[];
+  rows: number[];
+  walls: string[];
+}
+
 export interface RecordView {
   stateId: string;
   /** The manifest state; for the baseline, ambient's (it is judged against that brief). */
@@ -24,6 +33,8 @@ export interface RecordView {
   tvOn: boolean;
   ship: string;
   flips: number | null;
+  /** Shade records only. */
+  shades: ShadeView | null;
   metrics: RecordMetrics;
   luxRadiance: Float32Array | null;
   luxSurrogate: Float32Array;
@@ -47,6 +58,8 @@ export function showRecord(
   const slot = data.meta.slots[s]!;
   const { room } = manifest;
 
+  const frame = data.meta.frame ? bitsFromHex(data.meta.frame) : null;
+  if (stage.facade.setFrame(frame)) animate = false;
   const bits = data.facade(s, k);
   if (animate) stage.facade.animateTo(bits, stage.now());
   else stage.facade.setBits(bits);
@@ -73,6 +86,8 @@ export function showRecord(
   stage.invalidate();
 
   const rec = data.meta.records[stateId]!;
+  const windows = data.meta.windows;
+  const drops = rec.drops?.[s];
   return {
     stateId,
     state,
@@ -81,6 +96,14 @@ export function showRecord(
     tvOn,
     ship: rec.ship[s]!,
     flips: rec.flips[s] ?? null,
+    shades:
+      windows && drops
+        ? {
+            drops,
+            rows: windows.map((w) => w.r1 - w.r0 + 1),
+            walls: windows.map((w) => SIDES[w.wall]!),
+          }
+        : null,
     metrics: rec.metrics[s]!,
     luxRadiance: rad,
     luxSurrogate: sur,

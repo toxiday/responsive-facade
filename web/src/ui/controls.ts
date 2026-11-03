@@ -2,7 +2,7 @@
 // the list reads "Standing" while they are on open floor), what they do on their own (the daily
 // schedule, a random tour, or nothing; app/schedule.ts), whether the facade freezes until they
 // arrive,
-// the conventional facade for comparison, and the heatmap layer with its legend. Only
+// the conventional windows with operable shades instead of the responsive facade, and the heatmap layer with its legend. Only
 // city-months that have data are offered. The time is on the bar along the bottom (timebar.ts).
 
 import type { Legend } from '../data/manifest';
@@ -31,8 +31,8 @@ export interface Choice {
 }
 
 export interface CityChoice extends Choice {
-  /** Baked months with their day of the month. */
-  months: { month: number; day: number }[];
+  /** Baked months with their day of the month, and whether they have shade files. */
+  months: { month: number; day: number; shades: boolean }[];
 }
 
 export interface Selection {
@@ -41,8 +41,9 @@ export interface Selection {
   slot: number;
   state: string;
   layer: Layer;
-  /** Show the conventional facade instead of the responsive one. */
-  compare: boolean;
+  /** Show the conventional facade's windows with operable shades (shade_optimizer/) instead
+   * of the responsive facade (Tony, 2026-11-02; it replaces the fixed conventional facade). */
+  shades: boolean;
   /** "Freeze until arrival": the facade keeps its state while the occupant walks and changes once
    * they arrive (on by default). */
   hold: boolean;
@@ -110,7 +111,8 @@ export class Controls {
   private readonly city: HTMLSelectElement;
   private readonly month: HTMLSelectElement;
   private readonly state: HTMLSelectElement;
-  private readonly compare: HTMLInputElement;
+  private readonly shades: HTMLInputElement;
+  private readonly shadesLabel: HTMLLabelElement;
   private readonly hold: HTMLInputElement;
   private readonly routines = new Map<Routine, HTMLButtonElement>();
   private readonly layers = new Map<Layer, HTMLButtonElement>();
@@ -163,10 +165,10 @@ export class Controls {
     const holdLabel = el('label', { class: 'check' });
     holdLabel.append(this.hold, el('span', {}, 'Freeze until arrival'));
 
-    this.compare = el('input', { type: 'checkbox' });
-    this.compare.addEventListener('change', () => this.onChange({ compare: this.compare.checked }));
-    const compareLabel = el('label', { class: 'check' });
-    compareLabel.append(this.compare, el('span', {}, 'Conventional facade'));
+    this.shades = el('input', { type: 'checkbox' });
+    this.shades.addEventListener('change', () => this.onChange({ shades: this.shades.checked }));
+    this.shadesLabel = el('label', { class: 'check' });
+    this.shadesLabel.append(this.shades, el('span', {}, 'Operable shades'));
 
     const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Heatmap' });
     for (const [id, label] of LAYERS) {
@@ -189,7 +191,7 @@ export class Controls {
       row('Go to', this.state),
       row('Routine', routine),
       row('Facade', holdLabel),
-      row('Compare', compareLabel),
+      row('Compare', this.shadesLabel),
       row('Heatmap', seg),
       this.legend,
     );
@@ -208,7 +210,12 @@ export class Controls {
     this.state.value = listed ? sel.state : '';
     for (const [id, b] of this.routines) b.setAttribute('aria-pressed', String(id === sel.routine));
     this.hold.checked = sel.hold;
-    this.compare.checked = sel.compare;
+    const shadesHere = c.months.find((m) => m.month === sel.month)?.shades ?? false;
+    this.shades.checked = sel.shades;
+    this.shades.disabled = !shadesHere;
+    this.shadesLabel.title = shadesHere
+      ? 'The conventional windows, each with a roller shade lowered for the activity and hour'
+      : 'No shade data for this month yet';
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
     this.legend.hidden = sel.layer === 'none';
   }

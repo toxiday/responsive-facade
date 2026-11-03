@@ -18,6 +18,13 @@
 // the edge crosses its row, so a run of changed panels moves as one sheet with one edge, not as
 // slats. The shadow panels move with them, so the sun patches grow and shrink under the
 // curtain; the glass is there for the whole of each move.
+//
+// Shade mode (setFrame; Tony, 2026-11-02): the conventional facade's windows, each with a
+// roller shade (shade_optimizer/). Inside the frame's windows a closed panel is shade fabric,
+// a thin sheet in the reveal on the room side of the glass, instead of wall, and the glass
+// stays. The curtain moves the fabric as it moves panels: a drop unrolls it down from the
+// window head, a raise rolls it up. The shadow panels still cast the covered rows' shadow,
+// as Radiance simulates them (closed panels at the wall plane).
 
 import {
   BoxGeometry,
@@ -58,6 +65,9 @@ import {
 /** Thickness of the invisible shadow-casting panels at the wall plane. */
 export const PANEL_T = 0.03;
 const GLASS_T = 0.02;
+/** Shade fabric: its thickness, and its inner face out from the wall plane (in the reveal). */
+const FABRIC_T = 0.01;
+const FABRIC_INSET = 0.015;
 const OVERLAP = 0.001;
 /** Window outline width in CSS pixels: twice the black linework (scene/edges.ts). */
 const OUTLINE_WIDTH = 1.5;
@@ -69,10 +79,12 @@ interface WallMeshes {
   glass: InstancedMesh;
   /** Invisible thin panels at the wall plane: the facade's shadow. */
   shadow: InstancedMesh;
+  /** Shade fabric over the covered rows of the frame's windows (shade mode). */
+  fabric: InstancedMesh;
   /** Outline of the window openings, for when the wall is cut away. */
   ghost: LineSegments2;
-  /** Per panel: [wall panel, glass pane, shadow panel] transforms. */
-  layers: [Matrix4, Matrix4, Matrix4][];
+  /** Per panel: [wall panel, glass pane, shadow panel, shade fabric] transforms. */
+  layers: [Matrix4, Matrix4, Matrix4, Matrix4][];
 }
 
 const ZERO = new Matrix4().makeScale(0, 0, 0);
@@ -86,6 +98,8 @@ interface Flip {
   toWindow: boolean;
   /** When the edge reaches it, in rows: from the bottom for a raise, from the top for a drop. */
   order: number;
+  /** In one of the frame's windows (shade mode): the fabric moves, not a wall panel. */
+  shade: boolean;
 }
 
 const _p = new Vector3();
@@ -108,6 +122,8 @@ export class FacadeMesh {
   readonly group = new Group();
   readonly walls = new Map<Side, WallMeshes>();
   private bits: Uint8Array = new Uint8Array(4 * PANELS_PER_WALL);
+  /** Shade mode: the windows that have shades (1 = window), as bits; null for panels. */
+  private frame: Uint8Array | null = null;
   private flips: Flip[] = [];
   private flipStart = 0;
   // Screen-space width, so it needs the viewport size (setLineResolution).
@@ -167,6 +183,15 @@ export class FacadeMesh {
     glass.receiveShadow = false;
     glass.instanceMatrix.setUsage(DynamicDrawUsage);
     glass.renderOrder = 2;
+    const fabric = new InstancedMesh(
+      box,
+      new MeshStandardMaterial({ color: PALETTE.shade, roughness: 0.95 }),
+      PANELS_PER_WALL,
+    );
+    fabric.name = `facade-${side}-shades`;
+    fabric.castShadow = false; // the shadow panels cast for it
+    fabric.receiveShadow = true;
+    fabric.instanceMatrix.setUsage(DynamicDrawUsage);
 
     const out = OUTWARD[side];
     const outward = roomToThree(out[0], out[1], out[2]);
@@ -198,20 +223,21 @@ export class FacadeMesh {
           slab(0, WALL_T, OVERLAP),
           slab((WALL_T - GLASS_T) / 2, GLASS_T, 0),
           slab(0, PANEL_T, OVERLAP), // overlapped too: a crack would leak sun
+          slab(FABRIC_INSET, FABRIC_T, OVERLAP),
         ]);
       }
     for (let i = 0; i < PANELS_PER_WALL; i++) solid.setColorAt(i, PALETTE.panel);
 
     const group = new Group();
     group.name = `facade-${side}`;
-    group.add(solid, glass, this.jointLines(side, outward));
+    group.add(solid, glass, fabric, this.jointLines(side, outward));
     const ghost = new LineSegments2(new LineSegmentsGeometry(), this.outline);
     ghost.name = `facade-${side}-windows`;
     ghost.visible = false;
     ghost.frustumCulled = false;
     // The shadow panels stay outside the cutaway's group: never drawn, always casting.
     this.group.add(group, shadow, ghost);
-    return { side, group, solid, glass, shadow, ghost, layers };
+    return { side, group, solid, glass, shadow, fabric, ghost, layers };
   }
 
   /** Panel joints on both faces of the wall (display only, no shadow). */
@@ -252,6 +278,28 @@ export class FacadeMesh {
     this.applyAll();
   }
 
+  /**
+   * Shade mode with these windows (2048 values, 1 = window), or back to panels (null). Shows
+   * the current design at once; true when the mode or the frame changed.
+   */
+  setFrame(frame: ArrayLike<number> | null): boolean {
+    const next = frame ? Uint8Array.from(frame, (v) => (v ? 1 : 0)) : null;
+    const same =
+      next === null
+        ? this.frame === null
+        : this.frame !== null && next.every((v, i) => v === this.frame![i]);
+    if (same) return false;
+    this.frame = next;
+    this.flips = [];
+    this.applyAll();
+    return true;
+  }
+
+  /** True in shade mode. */
+  get shades(): boolean {
+    return this.frame !== null;
+  }
+
   /** Change to a design with the changed panels moving (see the header); `now` in ms. */
   animateTo(bits: ArrayLike<number>, now: number): void {
     if (this.flips.length) this.applyAll(); // a change still running jumps to its end
@@ -264,7 +312,8 @@ export class FacadeMesh {
         if (next[b] === this.bits[b]) continue;
         const toWindow = next[b] === 1;
         // Row 0 is at the ceiling: a raise starts at the bottom, a drop at the top.
-        flips.push({ w, i, toWindow, order: toWindow ? ROWS - 1 - row : row });
+        const shade = this.frame?.[b] === 1;
+        flips.push({ w, i, toWindow, order: toWindow ? ROWS - 1 - row : row, shade });
       }
     this.bits = next;
     for (const w of this.walls.values()) this.updateGhost(w);
@@ -285,14 +334,19 @@ export class FacadeMesh {
     const edge = ROWS * ease(t); // rows the edge has crossed
     for (const f of this.flips) {
       const p = Math.min(1, Math.max(0, edge - f.order)); // how far it has crossed this one
-      const [panel, pane, shade] = f.w.layers[f.i]!;
+      const [panel, pane, shade, cloth] = f.w.layers[f.i]!;
       const cover = f.toWindow ? 1 - p : p; // how much of the panel hangs down
-      f.w.solid.setMatrixAt(f.i, hung(panel, cover));
       f.w.shadow.setMatrixAt(f.i, hung(shade, cover));
-      f.w.glass.setMatrixAt(f.i, f.toWindow || p < 1 ? pane : ZERO);
+      if (f.shade) {
+        f.w.fabric.setMatrixAt(f.i, hung(cloth, cover));
+      } else {
+        f.w.solid.setMatrixAt(f.i, hung(panel, cover));
+        f.w.glass.setMatrixAt(f.i, f.toWindow || p < 1 ? pane : ZERO);
+      }
     }
     for (const w of this.walls.values())
-      for (const mesh of [w.solid, w.glass, w.shadow]) mesh.instanceMatrix.needsUpdate = true;
+      for (const mesh of [w.solid, w.glass, w.shadow, w.fabric])
+        mesh.instanceMatrix.needsUpdate = true;
     if (!running) {
       this.flips = [];
       this.applyAll();
@@ -305,13 +359,17 @@ export class FacadeMesh {
       for (let i = 0; i < PANELS_PER_WALL; i++) {
         const row = Math.floor(i / COLS);
         const col = i % COLS;
-        const isWindow = this.bits[bitIndex(side, row, col)] === 1;
-        const [panel, pane, shade] = w.layers[i]!;
-        w.solid.setMatrixAt(i, isWindow ? ZERO : panel);
-        w.glass.setMatrixAt(i, isWindow ? pane : ZERO);
+        const b = bitIndex(side, row, col);
+        const isWindow = this.bits[b] === 1;
+        // In shade mode a frame window keeps its glass; closed, its shade is down.
+        const framed = this.frame?.[b] === 1;
+        const [panel, pane, shade, cloth] = w.layers[i]!;
+        w.solid.setMatrixAt(i, isWindow || framed ? ZERO : panel);
+        w.glass.setMatrixAt(i, isWindow || framed ? pane : ZERO);
         w.shadow.setMatrixAt(i, isWindow ? ZERO : shade);
+        w.fabric.setMatrixAt(i, framed && !isWindow ? cloth : ZERO);
       }
-      for (const mesh of [w.solid, w.glass, w.shadow]) {
+      for (const mesh of [w.solid, w.glass, w.shadow, w.fabric]) {
         mesh.instanceMatrix.needsUpdate = true;
         mesh.computeBoundingSphere();
       }

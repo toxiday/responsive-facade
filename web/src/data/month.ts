@@ -1,5 +1,8 @@
 // Baked month files: public/data/{city}/{MM}.bin and the {MM}.json sidecar. The binary layout
-// is documented in public/data/FORMAT.md (written by bake/format.py).
+// is documented in public/data/FORMAT.md (written by bake/format.py). The shade optimizer's
+// files ({MM}.shades.bin and .shades.json, shade_optimizer/pack.py) have the same layout: the
+// conventional facade's windows with their shades, for every state, its sidecar adding the
+// windows, the frame (the conventional facade) and each record's shade positions.
 
 import type { Vec3 } from './manifest';
 import { GRID_N } from './grid';
@@ -35,9 +38,22 @@ export interface RecordMetrics {
 }
 
 export interface StateRecords {
+  /** How the design was reached: warm or cold (the panels), solved or kept (the shades). */
   ship: string[];
+  /** Panels changed (or shades moved) since the hour before; null in the first hour. */
   flips: (number | null)[];
   metrics: RecordMetrics[];
+  /** Shades: rows each shade is lowered, window by window. */
+  drops?: number[][];
+}
+
+/** A window of the conventional facade (shade files). */
+export interface ShadeWindow {
+  wall: number;
+  r0: number;
+  r1: number;
+  c0: number;
+  c1: number;
 }
 
 export interface MonthSidecar {
@@ -49,6 +65,21 @@ export interface MonthSidecar {
   states: string[];
   slots: SlotMeta[];
   records: Record<string, StateRecords>;
+  /** Shade files: the windows, and the conventional facade they are in (packed bits, hex). */
+  windows?: ShadeWindow[];
+  frame?: string;
+}
+
+export type Variant = 'panels' | 'shades';
+
+/** Packed facade bits (hex, LSB first, as the bake writes them) as 2048 flags. */
+export function bitsFromHex(hex: string): Uint8Array {
+  const bits = new Uint8Array(hex.length * 4);
+  for (let b = 0; b < hex.length / 2; b++) {
+    const byte = parseInt(hex.slice(2 * b, 2 * b + 2), 16);
+    for (let k = 0; k < 8; k++) bits[b * 8 + k] = (byte >> k) & 1;
+  }
+  return bits;
 }
 
 export class MonthData {
@@ -106,8 +137,14 @@ export class MonthData {
   }
 }
 
-export async function loadMonth(city: string, month: number): Promise<MonthData> {
-  const base = `${import.meta.env.BASE_URL}data/${city}/${String(month).padStart(2, '0')}`;
+export async function loadMonth(
+  city: string,
+  month: number,
+  variant: Variant = 'panels',
+): Promise<MonthData> {
+  const base =
+    `${import.meta.env.BASE_URL}data/${city}/${String(month).padStart(2, '0')}` +
+    (variant === 'shades' ? '.shades' : '');
   const [bin, meta] = await Promise.all([
     fetch(`${base}.bin`).then((r) => {
       if (!r.ok) throw new Error(`${base}.bin: ${r.status}`);

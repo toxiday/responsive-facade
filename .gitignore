@@ -13,6 +13,10 @@ bake/work/
 # review renders and reports stay local too (Tony, 2026-11-01)
 bake/reports/
 
+# shade optimizer: work files and reports, like the bake's
+shade_optimizer/work/
+shade_optimizer/reports/
+
 # Python
 __pycache__/
 *.pyc

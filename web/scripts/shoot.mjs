@@ -83,7 +83,10 @@ function appShots() {
     ['app-dining-surrogate', q('dining', '11:30', '&layer=surrogate')],
     ['app-desk-1130', q('desk', '11:30')],
     ['app-couch_tv-1630', q('couch_tv', '16:30')],
-    ['app-baseline-radiance', q('baseline', '11:30', '&layer=radiance')],
+    // The conventional windows with operable shades (shade_optimizer/).
+    ['app-shades-desk-1130', q('desk', '11:30', '&shades=1')],
+    ['app-shades-desk-radiance', q('desk', '11:30', '&shades=1&layer=radiance')],
+    ['app-shades-couch_tv-1530', q('couch_tv', '15:30', '&shades=1')],
     // The occupant (M4): where they start, the activity poses, standing, and mid-walk.
     ['app-occupant-entry', '?city=houston&month=12&slot=11:30'],
     // The readout's details, open (as on hover or a tap).

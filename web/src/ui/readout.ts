@@ -45,9 +45,7 @@ export class Readout {
       ? `Walking to ${walking.charAt(0).toLowerCase()}${walking.slice(1)}`
       : morning
         ? 'Night'
-        : view.stateId === 'baseline'
-          ? 'Conventional facade (baseline)'
-          : (view.state?.label ?? view.stateId);
+        : (view.state?.label ?? view.stateId);
     const main: string[] = [
       `<div class="title"><span class="hint" aria-hidden="true">▴</span>` +
         `<strong>${label}</strong></div>`,
@@ -72,11 +70,24 @@ export class Readout {
             `</div>`,
         );
       }
-      const facade =
-        view.ship === 'baseline'
-          ? 'A fixed conventional facade, judged against the 200 lux ambient brief.'
-          : `Facade ${view.ship === 'warm' ? 'adjusted from the previous hour' : 'solved afresh'}` +
-            (view.flips === null ? '.' : `, ${view.flips} panels changed.`);
+      const sh = view.shades;
+      const facade = sh
+        ? `Shades ${view.ship === 'kept' ? 'kept from the previous hour' : 'set for this hour'}` +
+          (view.flips === null ? '.' : `, ${view.flips} of ${sh.drops.length} moved.`)
+        : `Facade ${view.ship === 'warm' ? 'adjusted from the previous hour' : 'solved afresh'}` +
+          (view.flips === null ? '.' : `, ${view.flips} panels changed.`);
+      if (sh) {
+        // Per wall, how far down each shade is, window by window.
+        const walls = [...new Set(sh.walls)].map(
+          (w) =>
+            `${w} ` +
+            sh.drops
+              .map((d, i) => (sh.walls[i] === w ? `${Math.round((100 * d) / sh.rows[i]!)}%` : ''))
+              .filter(Boolean)
+              .join(', '),
+        );
+        more.push(`<div>Conventional windows with shades. Down: ${walls.join(' · ')}.</div>`);
+      }
       const inBand = m.in_band_rad?.[0] ?? m.in_band_sur[0];
       more.push(
         `<div>${inBand}% of the zone in band · ` +

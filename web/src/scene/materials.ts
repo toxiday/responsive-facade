@@ -12,6 +12,7 @@ export const PALETTE = {
   ceiling: new Color('#efede9'),
   panel: new Color('#e9e6e1'),
   glass: new Color('#9cc3dc'),
+  shade: new Color('#d6cfc3'), // roller shade fabric (shade mode, facadeMesh.ts)
   mullion: new Color('#8f8a84'),
   furniture: new Color('#cfc9c0'),
   kick: new Color('#a19b92'), // recessed plinths under base cabinets

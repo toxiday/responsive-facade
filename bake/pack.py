@@ -59,15 +59,22 @@ def pack_month(city: str, month: int) -> dict:
 
 
 def write_index() -> dict:
-    """web/public/data/index.json: {"schema": 1, "months": {city: [month, ...]}}."""
+    """web/public/data/index.json: {"schema": 1, "months": {city: [month, ...]}, "shades":
+    {city: [month, ...]}}, the second for the shade optimizer's files (shade_optimizer/pack.py),
+    so whichever packs last lists both."""
     root = Path(config.WEB_DATA)
     months: dict[str, list[int]] = {}
+    shades: dict[str, list[int]] = {}
     for city in config.CITIES:
         found = sorted(int(b.stem) for b in (root / city).glob("[0-1][0-9].bin")
                        if b.with_suffix(".json").exists())
         if found:
             months[city] = found
-    index = {"schema": 1, "months": months}
+        found = sorted(int(b.name[:2]) for b in (root / city).glob("[0-1][0-9].shades.bin")
+                       if (root / city / f"{b.name[:2]}.shades.json").exists())
+        if found:
+            shades[city] = found
+    index = {"schema": 1, "months": months, "shades": shades}
     path = config.assert_writable(root / "index.json")
     path.write_text(json.dumps(index, separators=(",", ":")))
     return index
