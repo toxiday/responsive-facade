@@ -1,11 +1,12 @@
 // The day's clock (Tony, 2026-11-01; 5 s an hour, at his ask, after first trying 10). Unless
-// time is frozen, each baked hour shows for HOUR_S seconds. After the last one the room goes
-// dark for a NIGHT_S night (the bake only has the hours with the sun more than 5° up), then the
+// time is paused, each baked hour shows for HOUR_S seconds. After the last one the room goes
+// dark for a NIGHT_S night (5 s, Tony 2026-11-02, first 10; the bake only has the hours with
+// the sun more than 5° up), then the
 // day starts again at its first hour. Daylight fades over FADE_S seconds into the night and back
 // out of it, starting the first hour.
 
 export const HOUR_S = 5;
-export const NIGHT_S = 10;
+export const NIGHT_S = 5;
 export const FADE_S = 1.5;
 
 const ease = (t: number) => t * t * (3 - 2 * t);

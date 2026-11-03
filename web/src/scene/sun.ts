@@ -1,5 +1,8 @@
-// Sun and sky light (guidelines §3.5). The direction is ALWAYS the baked sun vector of the slot
-// being shown; it is never recomputed here. One shadow map fitted tightly to the room.
+// Sun and sky light (guidelines §3.5). The direction always comes from the bake's sun vectors,
+// never from a solar model here: at each baked hour it is exactly that hour's vector. While time
+// runs, the display sun glides on between them (glidingSun; Tony, 2026-11-02), so the sun
+// patches drift through the hour instead of jumping at the next; the numbers, the heatmap and
+// the fill stay the baked hour's. One shadow map fitted tightly to the room.
 //
 // Display exposure (Tony, 2026-11-01): light levels are given in lux, and a white surface at
 // the ambient target, 200 lux, reads as 50% grey (sRGB 128). The sky light holds the room at
@@ -11,7 +14,7 @@
 
 import { Color, DirectionalLight, HemisphereLight, Matrix4, Vector3 } from 'three';
 import type { Room, Vec3 } from '../data/manifest';
-import { roomToThree, towardSunThree } from './frame';
+import { roomToThree, sunAngles, towardSunThree } from './frame';
 import { WALL_T } from './shell';
 
 const DISTANCE = 30;
@@ -24,6 +27,10 @@ export const AMBIENT_LUX = 200;
 export const SUN_LUX = 2000;
 /** Sky light at night (display only). */
 export const NIGHT_LUX = 35;
+/** The display sun fades out over its last this many degrees above the horizon. */
+export const HORIZON_DEG = 5;
+const SUN_LOW = new Color('#ffb36b');
+const SUN_HIGH = new Color('#fff6ea');
 const SKY = { day: new Color(0xffffff), night: new Color('#8ea2c8') };
 const GROUND = { day: new Color(0xcdc5b9), night: new Color('#4a4e5c') };
 
@@ -38,6 +45,53 @@ export interface SunSlot {
   alt: number;
   dni: number;
   dhi: number;
+}
+
+/** A baked hour's sun, as the month files store it. */
+export interface BakedSun {
+  sun_room: Vec3;
+  alt: number;
+  dni: number;
+  dhi: number;
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** Along the great circle from unit vector `a` (t = 0) to `b` (t = 1), and on past it. */
+function slerp(a: Vec3, b: Vec3, t: number): Vec3 {
+  const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+  const om = Math.acos(dot);
+  if (om < 1e-9) return [...a];
+  const wa = Math.sin((1 - t) * om) / Math.sin(om);
+  const wb = Math.sin(t * om) / Math.sin(om);
+  const v: Vec3 = [wa * a[0] + wb * b[0], wa * a[1] + wb * b[1], wa * a[2] + wb * b[2]];
+  const len = Math.hypot(...v);
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+/**
+ * The display sun `at` hours into the baked day (hour k at `at` = k): exactly hour k's baked sun
+ * there, then along the arc towards hour k + 1's, with DNI and DHI between the two. Through the
+ * last hour it carries on along the arc from the hour before, setting, at the last hour's DNI
+ * (SunLight fades it out at the horizon).
+ */
+export function glidingSun(slots: readonly BakedSun[], at: number): SunSlot {
+  const n = slots.length;
+  const k = Math.max(0, Math.min(Math.floor(at), n - 1));
+  const u = at - k;
+  const s = slots[k]!;
+  if (u <= 0 || n < 2) return { sunRoom: s.sun_room, alt: s.alt, dni: s.dni, dhi: s.dhi };
+  const [i, j, f] = k < n - 1 ? [k, k + 1, u] : [k - 1, k, 1 + u];
+  const a = slots[i]!;
+  const b = slots[j]!;
+  const sunRoom = slerp(a.sun_room, b.sun_room, f);
+  const g = Math.min(f, 1);
+  return {
+    sunRoom,
+    alt: sunAngles(sunRoom).alt,
+    dni: lerp(a.dni, b.dni, g),
+    dhi: lerp(a.dhi, b.dhi, g),
+  };
 }
 
 export class SunLight {
@@ -77,10 +131,12 @@ export class SunLight {
     this.light.target.position.copy(this.centre);
     this.light.target.updateMatrixWorld();
 
-    // Display-only colour and strength from altitude and DNI (no sun patch without beam).
+    // Display-only colour and strength from altitude and DNI (no sun patch without beam), fading
+    // out at the horizon (baked hours are all above 5°; the gliding sun sets after the last).
     const a = Math.max(0, Math.min(1, (slot.alt - 5) / 40));
-    this.light.color.copy(new Color('#ffb36b')).lerp(new Color('#fff6ea'), a);
-    this.sunIntensity = SUN_LUX * LUX * Math.min(1, slot.dni / 800);
+    this.light.color.lerpColors(SUN_LOW, SUN_HIGH, a);
+    const horizon = Math.max(0, Math.min(1, slot.alt / HORIZON_DEG));
+    this.sunIntensity = SUN_LUX * LUX * Math.min(1, slot.dni / 800) * horizon;
     this.light.intensity = this.sunIntensity * this.daylight;
     this.fitShadow();
   }

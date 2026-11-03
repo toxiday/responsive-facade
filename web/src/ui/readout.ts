@@ -1,5 +1,5 @@
-// The readout (guidelines §6, HUD), kept minimal (Tony, 2026-11-01): the activity with the place
-// and time, the lux at the occupant (Radiance where there is a run), the target and whether the
+// The readout (guidelines §6, HUD), kept minimal (Tony, 2026-11-01): the activity with the
+// location, date and time, the lux at the occupant (Radiance where there is a run), the target and whether the
 // light is in v3's band. The rest opens on hover (or a tap, which focuses it): where the number
 // is taken and the surrogate's value, the zone's share in band, glare, how the facade got
 // there, and the sky. At night (the day's clock) there are no numbers.
@@ -55,7 +55,7 @@ export class Readout {
         `${morning ? '' : `, ${s.label} LST`}</div>`,
     ];
     const more: string[] = [];
-    if (held) more.push(`<div>Facade on hold until they arrive.</div>`);
+    if (held) more.push(`<div>Facade frozen until they arrive.</div>`);
     if (morning) {
       more.push(`<div>The sun is down. The day starts again at ${morning} LST.</div>`);
     } else {

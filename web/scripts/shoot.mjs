@@ -47,13 +47,13 @@ const SHOTS = [
 function appShots() {
   const q = (state, slot, extra = '') =>
     `?city=houston&month=12&state=${state}&slot=${slot}${extra}`;
-  // The last hour, then on by `sec` (8: into the night; 18: the next morning).
+  // The last hour, then on by `sec` (8: into the night; 13: the next morning).
   const lastHourThen = (sec) =>
     `window.__rf.app.set({ slot: 99 }).then(() => window.__rf.app.advance(${sec}))`;
   const night = [
     ['app-night', '?city=houston&month=12', lastHourThen(8)],
     ['app-night-tv', q('couch_tv', '16:30'), lastHourThen(8)],
-    ['app-night-morning', '?city=houston&month=12', lastHourThen(18)],
+    ['app-night-morning', '?city=houston&month=12', lastHourThen(13)],
     // The daily schedule from breakfast (Houston Dec): reading, the chaise, cooking, TV.
     ...[
       ['0930', 5.5],

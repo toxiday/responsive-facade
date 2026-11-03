@@ -3,7 +3,7 @@
 // for the NIGHT_S night after the last one. While time runs the thumb glides through each hour,
 // and the scene moves on as it reaches the next line. Clicking or dragging picks the nearest
 // hour (the clock waits while the thumb is held); the arrow keys step an hour (app.ts). The
-// time shown is left of the bar, the Freeze box right.
+// time shown is left of the bar, the Pause box right.
 
 import type { SlotMeta } from '../data/month';
 import { barHours, HOUR_S, NIGHT_S } from '../app/clock';
@@ -55,9 +55,9 @@ export class TimeBar {
     this.freeze.addEventListener('change', () => this.onFreeze(this.freeze.checked));
     const freezeLabel = el('label', {
       class: 'check',
-      title: `Unfrozen, each hour shows for ${HOUR_S} s, then a ${NIGHT_S} s night`,
+      title: `Running, each hour shows for ${HOUR_S} s, then a ${NIGHT_S} s night`,
     });
-    freezeLabel.append(this.freeze, el('span', {}, 'Freeze'));
+    freezeLabel.append(this.freeze, el('span', {}, 'Pause'));
 
     this.el.append(this.time, this.track, freezeLabel);
     parent.append(this.el);
@@ -65,7 +65,7 @@ export class TimeBar {
     new ResizeObserver(() => this.thinLabels()).observe(this.track);
   }
 
-  /** The hours of the day being shown, the one shown (or the night), and the Freeze box. */
+  /** The hours of the day being shown, the one shown (or the night), and the Pause box. */
   show(slot: number, slots: SlotMeta[], night: boolean, freeze: boolean): void {
     const key = slots.map((s) => s.label).join();
     if (key !== this.dayKey) {

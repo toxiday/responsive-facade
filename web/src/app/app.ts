@@ -1,11 +1,12 @@
 // The demo. Pick a city, a baked day and an hour; click anywhere in the room and the occupant
 // walks there (M4): a piece of furniture takes its nearest seat, open floor a standing spot.
-// By default the facade keeps its state while they walk and changes once they arrive ("Hold
-// until they arrive", Tony); unticked, it chases them as they walk. On the sofa, clicking the
+// By default the facade keeps its state while they walk and changes once they arrive ("Freeze
+// until arrival", Tony); unticked, it chases them as they walk. On the sofa, clicking the
 // TV turns it on and off. The "Go to" list walks them to an activity. The conventional facade
 // can be shown instead for comparison. Changes play as a curtain. Time runs on by itself, 5 s a
-// baked hour with a 10 s night between days, unless frozen (clock.ts). The demo always opens at
-// 08:30 (Tony), or the first baked hour after it; only a frozen link (?freeze=1) opens at its
+// baked hour with a 5 s night between days, unless paused (clock.ts); the sun glides on through
+// each hour (glideSun). The demo always opens at
+// 08:30 (Tony), or the first baked hour after it; only a paused link (?freeze=1) opens at its
 // own ?slot=. The selection lives in the URL, so a view can be linked (and shot by
 // scripts/shoot.mjs).
 //
@@ -25,6 +26,7 @@ import { floorTarget, itemTarget, stateTarget, tvSeat, type Target } from '../oc
 import { pathLength, WalkGrid, type Pt } from '../occupant/walk';
 import { withEdges } from '../scene/edges';
 import { Stage } from '../scene/stage';
+import { glidingSun } from '../scene/sun';
 import { Controls, type CityChoice, type Choice, type Selection } from '../ui/controls';
 import { Readout } from '../ui/readout';
 import { TimeBar } from '../ui/timebar';
@@ -64,6 +66,8 @@ export class App {
   private readonly timebar: TimeBar;
   /** The hour the clock is on: the slot shown, or the next one while its set() is pending. */
   private hour = 0;
+  /** Where the display sun was last put, in hours into the day; NaN once a render has reset it. */
+  private sunAt = NaN;
   /** The daylight level and night as last put on the stage. */
   private daylight = 1;
   private night = false;
@@ -198,8 +202,9 @@ export class App {
   /**
    * The options that change no view. Hold: the facade keeps its state while the occupant walks,
    * or chases them again from their next step. Routine: the occupant follows the daily schedule
-   * or the random tour (from where they are), or stays put. Freeze: the clock stops at the start of the
-   * hour shown, or runs on from there; frozen at night, the day starts. Otherwise nothing is
+   * or the random tour (from where they are), or stays put. Freeze (the time bar's Pause box):
+   * the clock stops at the start of the hour shown, or runs on from there; paused at night, the
+   * day starts. Otherwise nothing is
    * redrawn, so a curtain already moving finishes as it was.
    */
   setOptions(patch: Partial<Pick<Selection, 'hold' | 'freeze' | 'routine'>>): Promise<void> {
@@ -365,6 +370,7 @@ export class App {
         if (this.night) this.showNight();
       }
       if (plan) this.followSchedule(plan);
+      busy = this.glideSun() || busy;
       const k = this.clock.daylight;
       if (k !== this.daylight) {
         this.daylight = k;
@@ -373,6 +379,28 @@ export class App {
       }
     }
     return this.tick(dt) || busy;
+  }
+
+  /**
+   * The display sun glides on through each hour (Tony, 2026-11-02): at the hour's baked sun as
+   * the thumb crosses its line, towards the next hour's as the thumb nears the next; through the
+   * last hour it sets, and the night keeps it there (sun.ts: glidingSun). The facade, the fill,
+   * the heatmap and the readout stay the baked hour's. With the heatmap on, the sun stays at the
+   * baked hour, so its patches match the simulation shown. True when the sun moved.
+   */
+  private glideSun(): boolean {
+    const data = this.data!;
+    const n = data.nSlots;
+    const at =
+      this.sel.layer !== 'none'
+        ? this.sel.slot
+        : this.clock.night
+          ? n
+          : this.clock.position(this.hour, n);
+    if (at === this.sunAt) return false;
+    this.sunAt = at;
+    this.stage.setSun(glidingSun(data.meta.slots, at));
+    return true;
   }
 
   /** Night: no heatmap (there is no baked hour), and the time bar and readout say so. */
@@ -489,6 +517,7 @@ export class App {
       this.sel.layer,
       animate,
     );
+    this.sunAt = NaN; // showRecord put the sun at the baked hour; glide it on from there
     if (this.sel.compare) {
       // The conventional facade is judged against ambient; still outline where they are.
       this.stage.zones.set(this.manifest.states.find((s) => s.id === this.sel.state) ?? null);
