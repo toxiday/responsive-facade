@@ -1,12 +1,13 @@
 // Fails the build if the shipped site breaks the data budget (guidelines §4.5, §7a):
-// baked data ≤ 20 MB in total and every file < 50 MB.
+// baked data ≤ 100 MB in total (Tony, 2026-11-03: raised from 20 MB for the 66 states, the
+// files shipped as they are) and every file < 50 MB.
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 const MB = 1024 * 1024;
-const DATA_LIMIT = 20 * MB;
+const DATA_LIMIT = 100 * MB;
 const FILE_LIMIT = 50 * MB;
 
 function walk(dir) {
@@ -28,7 +29,7 @@ console.log(
 );
 let failed = false;
 if (data > DATA_LIMIT) {
-  console.error(`data is ${(data / MB).toFixed(2)} MB, over the 20 MB budget`);
+  console.error(`data is ${(data / MB).toFixed(2)} MB, over the 100 MB budget`);
   failed = true;
 }
 for (const f of tooBig) {

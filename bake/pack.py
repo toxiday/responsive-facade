@@ -17,7 +17,7 @@ import numpy as np
 from . import bench, config, format as fmt, report, slots, verify
 from .solve import bits_from_hex, chain_path
 
-SIZE_BUDGET = 20 * 2 ** 20      # guidelines: all data <= 20 MB (open question at 66 states)
+SIZE_BUDGET = 100 * 2 ** 20     # all data <= 100 MB (Tony, 2026-11-03; was 20 MB, at 7 states)
 
 
 def pack_month(city: str, month: int) -> dict:
