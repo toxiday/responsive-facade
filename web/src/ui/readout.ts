@@ -17,6 +17,8 @@ export interface ReadoutExtras {
   held?: boolean;
   /** At night, the first hour of the next day. */
   morning?: string | null;
+  /** At night, the next day's season and date, where it is another season ("Summer, Jun 2"). */
+  next?: string | null;
 }
 
 export class Readout {
@@ -36,7 +38,7 @@ export class Readout {
     city: string,
     month: number,
     day: number,
-    { walking = null, held = false, morning = null }: ReadoutExtras = {},
+    { walking = null, held = false, morning = null, next = null }: ReadoutExtras = {},
   ): void {
     const r = reading(manifest, view);
     const m = view.metrics;
@@ -55,7 +57,11 @@ export class Readout {
     const more: string[] = [];
     if (held) more.push(`<div>Facade frozen until they arrive.</div>`);
     if (morning) {
-      more.push(`<div>The sun is down. The day starts again at ${morning} LST.</div>`);
+      more.push(
+        next
+          ? `<div>The sun is down. Next: ${next}, from ${morning} LST.</div>`
+          : `<div>The sun is down. The day starts again at ${morning} LST.</div>`,
+      );
     } else {
       if (r) {
         const where = r.where === 'floor' ? 'floor median' : 'at the occupant';

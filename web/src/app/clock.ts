@@ -2,7 +2,7 @@
 // time is paused, each baked hour shows for HOUR_S seconds. After the last one the room goes
 // dark for a NIGHT_S night (5 s, Tony 2026-11-02, first 10; the bake only has the hours with
 // the sun more than 5° up), then the
-// day starts again at its first hour. Daylight fades over FADE_S seconds into the night and back
+// next day starts at its first hour: the next season's (app.ts). Daylight fades over FADE_S seconds into the night and back
 // out of it, starting the first hour.
 
 export const HOUR_S = 5;

@@ -6,7 +6,9 @@
 // with operable shades can be shown instead (?shades=1, shade_optimizer/), solved the same way
 // for each activity and hour. Changes play as a curtain. Time runs on by itself, 5 s a
 // baked hour with a 5 s night between days, unless paused (clock.ts); the sun glides on through
-// each hour (glideSun). The demo always opens at
+// each hour (glideSun). Each night leads into the next season's day (Tony, 2026-11-03): spring,
+// summer, fall, winter and round again; the year bar under the time bar shows where in the year
+// the day is, and the next season is loaded ahead (prefetch). The demo always opens at
 // 08:30 (Tony), or the first baked hour after it; only a paused link (?freeze=1) opens at its
 // own ?slot=. The selection lives in the URL, so a view can be linked (and shot by
 // scripts/shoot.mjs).
@@ -28,9 +30,17 @@ import { pathLength, WalkGrid, type Pt } from '../occupant/walk';
 import { withEdges } from '../scene/edges';
 import { Stage } from '../scene/stage';
 import { glidingSun } from '../scene/sun';
-import { Controls, type CityChoice, type Choice, type Selection } from '../ui/controls';
+import {
+  Controls,
+  monthLabel,
+  MONTHS,
+  type CityChoice,
+  type Choice,
+  type Selection,
+} from '../ui/controls';
 import { Readout } from '../ui/readout';
 import { TimeBar } from '../ui/timebar';
+import { yearPosition, YearBar } from '../ui/yearbar';
 import { DayClock, HOUR_S, NIGHT_S } from './clock';
 import { showRecord, type Layer, type RecordView } from './record';
 import {
@@ -65,6 +75,7 @@ export class App {
   private readonly raycaster = new Raycaster();
   private readonly clock = new DayClock();
   private readonly timebar: TimeBar;
+  private readonly yearbar: YearBar;
   /** The hour the clock is on: the slot shown, or the next one while its set() is pending. */
   private hour = 0;
   /** Where the display sun was last put, in hours into the day; NaN once a render has reset it. */
@@ -82,6 +93,9 @@ export class App {
   private data: MonthData | null = null;
   /** The day's shade records, while the shades are shown. */
   private shadesData: MonthData | null = null;
+  /** The next season's day, once loaded: the morning after tonight. */
+  private upcoming: MonthData | null = null;
+  private upcomingKey = '';
   private view: RecordView | null = null;
   private pending: Promise<void> = Promise.resolve();
 
@@ -127,6 +141,8 @@ export class App {
       if (patch.state !== undefined) return this.goToState(patch.state);
       if (patch.hold !== undefined || patch.routine !== undefined)
         return void this.setOptions(patch);
+      if (patch.month !== undefined && patch.city === undefined)
+        return this.pickSeason(patch.month);
       void this.set(patch);
     };
     this.timebar = new TimeBar(ui);
@@ -135,6 +151,8 @@ export class App {
       void this.set({ slot });
     };
     this.timebar.onFreeze = (freeze) => void this.setOptions({ freeze });
+    this.yearbar = new YearBar(this.timebar.el);
+    this.yearbar.onPick = (month) => this.pickSeason(month);
     addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).closest('select, input')) return;
       const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
@@ -247,6 +265,38 @@ export class App {
     return true;
   }
 
+  /** The visitor picks a season: the same hour of its day; at night, its day starts. */
+  private pickSeason(month: number): void {
+    const night = this.clock.night;
+    if (night) this.clock.restart();
+    void this.set(night ? { month, slot: 0 } : { month });
+  }
+
+  /** The season after the one shown, for the city (the same one if it has only one). */
+  private nextMonth(): number {
+    const months = this.cities.find((c) => c.id === this.sel.city)!.months;
+    const i = months.findIndex((m) => m.month === this.sel.month);
+    return months[(i + 1) % months.length]!.month;
+  }
+
+  /** Load the next season's day ahead of the night, so the morning doesn't wait for it. */
+  private prefetch(): void {
+    const month = this.nextMonth();
+    const key = `${this.sel.city}/${month}`;
+    if (month !== this.sel.month && this.sel.shades)
+      this.store.get(this.sel.city, month, 'shades').catch(() => {});
+    if (key === this.upcomingKey) return;
+    this.upcomingKey = key;
+    this.upcoming = null;
+    if (month === this.sel.month) return;
+    this.store
+      .get(this.sel.city, month)
+      .then((d) => {
+        if (this.upcomingKey === key) this.upcoming = d;
+      })
+      .catch(() => {});
+  }
+
   /** Walk the occupant to where a state is had (ambient: no walk, just the state). */
   goToState(stateId: string): void {
     this.takeOver();
@@ -299,7 +349,14 @@ export class App {
 
   /** The routine's plan over the day being shown; null with the routine off. */
   private plan(): Plan | null {
-    if (this.sel.routine === 'daily') return dailyPlan(this.data!.meta.slots.map((s) => s.label));
+    if (this.sel.routine === 'daily') {
+      const today = dailyPlan(this.data!.meta.slots.map((s) => s.label));
+      const next = this.upcoming;
+      if (!next) return today;
+      // After the night, the next season's day, with its own hours.
+      const tomorrow = dailyPlan(next.meta.slots.map((s) => s.label));
+      return (slot, day) => (day > this.day ? tomorrow : today)(slot, day);
+    }
     if (this.sel.routine === 'random') {
       return randomPlan(
         this.manifest.activities.map((a) => a.states),
@@ -378,11 +435,15 @@ export class App {
       const wasNight = this.clock.night;
       const next = this.clock.update(dt, this.hour, n);
       if (next !== null) {
-        if (wasNight) this.day++;
         this.hour = next;
-        void this.set({ slot: next });
+        if (wasNight) {
+          this.day++;
+          const month = this.nextMonth();
+          void this.set(month !== this.sel.month ? { month, slot: 0 } : { slot: 0 });
+        } else void this.set({ slot: next });
       }
       this.timebar.setPosition(this.clock.position(this.hour, n));
+      this.yearbar.setPosition(this.yearAt());
       // Nightfall dims the room; the morning comes with the first hour's set() above.
       if (this.clock.night !== this.night) {
         this.night = this.clock.night;
@@ -399,6 +460,23 @@ export class App {
       }
     }
     return this.tick(dt) || busy;
+  }
+
+  /**
+   * Where the year bar's thumb is: on the day shown, and through the night on towards the next
+   * season's day (round the end of the bar from winter to spring).
+   */
+  private yearAt(): number {
+    const days = this.cities.find((c) => c.id === this.sel.city)!.months;
+    const today = days.find((m) => m.month === this.sel.month)!;
+    const from = yearPosition(today);
+    if (!this.clock.night) return from;
+    const next = days.find((m) => m.month === this.nextMonth())!;
+    if (next === today) return from;
+    const n = this.data!.nSlots;
+    const f = Math.min(1, (this.clock.position(this.hour, n) - n) / (NIGHT_S / HOUR_S));
+    const to = yearPosition(next);
+    return from + f * ((to > from ? to : to + 1) - from);
   }
 
   /**
@@ -435,6 +513,9 @@ export class App {
     const data = this.data!;
     this.timebar.show(this.sel.slot, data.meta.slots, this.clock.night, this.sel.freeze);
     this.timebar.setPosition(this.clock.position(this.hour, data.nSlots));
+    const city = this.cities.find((c) => c.id === this.sel.city)!;
+    this.yearbar.show(city.months, this.sel.month);
+    this.yearbar.setPosition(this.yearAt());
   }
 
   private tick(dt: number): boolean {
@@ -518,10 +599,16 @@ export class App {
           ? (this.manifest.states.find((s) => s.id === dest.stateId)?.label ?? dest.stateId)
           : 'a spot on the floor'
         : null;
+    // At night: the next season's first hour, once it is loaded.
+    const next = this.upcoming?.meta;
     this.readout.show(this.manifest, this.view, city.label, this.sel.month, this.data.meta.day, {
       walking,
       held: walking !== null && this.sel.hold,
-      morning: this.clock.night ? this.data.meta.slots[0]!.label : null,
+      morning: this.clock.night ? (next ?? this.data.meta).slots[0]!.label : null,
+      next:
+        this.clock.night && next
+          ? `${monthLabel(next.month)}, ${MONTHS[next.month - 1]} ${next.day}`
+          : null,
     });
   }
 
@@ -542,6 +629,7 @@ export class App {
     this.showTime();
     this.refreshReadout();
     this.syncUrl();
+    this.prefetch();
   }
 
   private syncUrl(): void {

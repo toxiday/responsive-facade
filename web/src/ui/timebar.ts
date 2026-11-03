@@ -55,7 +55,7 @@ export class TimeBar {
     this.freeze.addEventListener('change', () => this.onFreeze(this.freeze.checked));
     const freezeLabel = el('label', {
       class: 'check',
-      title: `Running, each hour shows for ${HOUR_S} s, then a ${NIGHT_S} s night`,
+      title: `Running, each hour shows for ${HOUR_S} s, then a ${NIGHT_S} s night into the next season`,
     });
     freezeLabel.append(this.freeze, el('span', {}, 'Pause'));
 

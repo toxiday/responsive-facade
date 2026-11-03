@@ -10,7 +10,7 @@ import type { Layer } from '../app/record';
 import type { Routine } from '../app/schedule';
 
 export const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'January',
   'February',
   'March',
@@ -26,7 +26,7 @@ const MONTH_NAMES = [
 ];
 // The baked months named by season for now (Tony, 2026-11-03); any other month by its name.
 const SEASONS: Record<number, string> = { 3: 'Spring', 6: 'Summer', 9: 'Fall', 12: 'Winter' };
-const monthLabel = (m: number) => SEASONS[m] ?? MONTH_NAMES[m - 1]!;
+export const monthLabel = (m: number) => SEASONS[m] ?? MONTH_NAMES[m - 1]!;
 
 export interface Choice {
   id: string;
