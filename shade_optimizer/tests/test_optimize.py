@@ -31,7 +31,9 @@ def test_scores_are_the_deployed_loss(setup):
 def test_solve_beats_its_starts_and_no_single_move_improves_it(setup):
     _v3, _solver, so, cond, tgt = setup
     r = so.solve(cond, tgt)
-    assert r.method == "window"
+    assert r.method == "ga_window"
+    w = so.solve(cond, tgt, method="window")
+    assert r.loss <= w.loss * (1 + BF16_TOL)  # it includes the window search
     up, down = so.score(cond, tgt, [np.zeros(7, int), so.rows])
     assert r.loss <= min(up, down) * (1 + BF16_TOL)
     moves = []

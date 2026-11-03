@@ -3,9 +3,9 @@
 Every method scores whole-row designs with v3's own objective: the surrogate (`_lux`, on v3's
 in-distribution `facade_in`) into the loss (`zone_penalty_sum` per occupied cell, plus
 `outside_glare_sum` per unoccupied cell at glare_weight 0.25), as `seed_sweep.deployed_loss`
-scores a finished design. Three methods (`solve(..., method=)`):
+scores a finished design. The methods (`solve(..., method=)`):
 
-  window    (the default) window by window: from each start (all up, half down, all down, and
+  window    window by window: from each start (all up, half down, all down, and
             the previous hour's shades when there is one), each round tries every position of
             every shade, one batch of 56 designs, and takes the best single move, until none
             helps; the best of the starts.
@@ -15,12 +15,26 @@ scores a finished design. Three methods (`solve(..., method=)`):
             design kept every EVAL_EVERY steps, then the window-by-window search from it.
   ga        a genetic algorithm: GA_POP random designs, tournament selection, uniform crossover,
             about one shade mutated per child, the best GA_ELITE kept, GA_GENS generations.
+  ga_window (the default) the GA, and the window-by-window search from the GA's best design
+            and from the usual starts; the better of the two. Never worse than the window search,
+            which only moves one shade at a time; the GA, mixing designs, finds the two- and
+            three-shade changes it can't.
 
-Why window by window (2026-11-02, Houston December, 27 hours of desk, couch_tv and
-lounge_read_w): it beat the gradient method in 11 hours and lost in 2 (mean loss 0.262 vs
-0.276) in 2.9 s against 4.7 s. The gradient's soft shades let half a sun beam through where
-the real design lets all or none, and its search ends at one design, where the window search
-starts from several.
+Why ga_window (Tony, 2026-11-02, on 27 hours of Houston December: desk, couch_tv and
+lounge_read_w, each from scratch; "best found" = within bfloat16 precision of the best any
+method found):
+
+  window             mean loss 0.262, best found 18 of 27, 2.2 s
+  gradient + window  mean loss 0.276, best found 14 of 27, 4.2 s
+  GA (three seeds)   mean loss 0.254-0.256, best found 21-23 of 27, 3.7 s
+  GA + window        mean loss 0.254-0.255, best found 22-25 of 27, 5.8 s
+  best of three GAs  mean loss 0.254, best found 26 of 27, 11 s
+
+The window search fell short with the TV on (0.120 against the GA's 0.049 at 14:30); the GA
+alone varied from seed to seed and once missed what the window search found.
+
+The gradient method falls short because its soft shades let half a sun beam through where the
+real design lets all or none, and its search ends at one design.
 
 GPU memory: every surrogate call scores at most SCORE_CHUNK designs (a GA generation, a search
 round), and each process caps its share of the GPU at GPU_FRACTION, so the optimizer fails
@@ -46,8 +60,8 @@ from bake import config
 
 from . import shades
 
-METHODS = ("window", "gradient", "ga")
-METHOD = "window"
+METHODS = ("window", "gradient", "ga", "ga_window")
+METHOD = "ga_window"
 
 SCORE_CHUNK = 64         # designs per surrogate call
 GPU_FRACTION = 0.2       # of the GPU's memory, at most, per optimizer process
@@ -186,8 +200,13 @@ class ShadeOptimizer:
             best = self._gradient(cond_t, tgt_t, prev, seen, consider)
             gradient_loss = float(self._score_t(cond_t, tgt_t, [best], exact=True)[0])
             drops, rounds = self._window(cond_t, tgt_t, [best], seen, consider)
-        else:
+        elif method == "ga":
             drops, rounds = self._ga(seed, seen, consider)
+        else:
+            best, gens = self._ga(seed, seen, consider)
+            drops, rounds = self._window(cond_t, tgt_t, [best] + self._starts(prev), seen,
+                                         consider)
+            rounds += gens
         loss = float(self._score_t(cond_t, tgt_t, [drops], exact=True)[0])
         return Result(drops=list(drops), loss=loss, method=method, rounds=rounds,
                       scored=len(seen), seconds=time.perf_counter() - t0,

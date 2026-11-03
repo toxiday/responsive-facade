@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import zlib
 import multiprocessing as mp
 import os
 import statistics
@@ -98,9 +99,10 @@ def solve_chain(task) -> dict:
     tgt = room.target_and_owner(_W["states"][sid])[0]
     up = [0] * len(so.windows)
     prev, recs, t0 = None, [], time.perf_counter()
-    for slot in day["slots"]:
+    for k, slot in enumerate(day["slots"]):
         cond = bench.condition(v3, slot)
-        r = so.solve(cond, tgt, prev)
+        seed = zlib.crc32(f"{city}/{month}/{sid}/{k}".encode()) & 0x7FFFFFFF  # the GA's
+        r = so.solve(cond, tgt, prev, seed=seed)
         ship, loss, how = r.drops, r.loss, "solved"
         if prev is not None:
             L_prev = float(so.score(cond, tgt, [prev])[0])
