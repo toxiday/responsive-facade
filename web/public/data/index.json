@@ -1,1 +1,1 @@
-{"schema":1,"months":{"houston":[12]}}
+{"schema":1,"months":{"houston":[3,6,9,12],"boston":[3,6,9,12],"seattle":[3,6,9,12]},"shades":{"houston":[3,6,9,12],"boston":[3,6,9,12],"seattle":[3,6,9,12]}}
