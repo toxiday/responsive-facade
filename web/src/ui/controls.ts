@@ -1,4 +1,4 @@
-// The control panel: the location (city) and the month, where the occupant goes (each activity;
+// The control panel: the location (city) and the season (a baked month), where the occupant goes (each activity;
 // the list reads "Standing" while they are on open floor), what they do on their own (the daily
 // schedule, a random tour, or nothing; app/schedule.ts), whether the facade freezes until they
 // arrive,
@@ -24,6 +24,9 @@ const MONTH_NAMES = [
   'November',
   'December',
 ];
+// The baked months named by season for now (Tony, 2026-11-03); any other month by its name.
+const SEASONS: Record<number, string> = { 3: 'Spring', 6: 'Summer', 9: 'Fall', 12: 'Winter' };
+const monthLabel = (m: number) => SEASONS[m] ?? MONTH_NAMES[m - 1]!;
 
 export interface Choice {
   id: string;
@@ -134,7 +137,7 @@ export class Controls {
     this.city = el('select', { 'aria-label': 'City' });
     for (const c of cities) this.city.append(el('option', { value: c.id }, c.label));
     this.city.addEventListener('change', () => {
-      // The same month in the new city, where it has it.
+      // The same season in the new city, where it has it.
       const c = this.cities.find((x) => x.id === this.city.value)!;
       const m = Number(this.month.value);
       this.onChange({
@@ -143,7 +146,7 @@ export class Controls {
       });
     });
 
-    this.month = el('select', { 'aria-label': 'Month' });
+    this.month = el('select', { 'aria-label': 'Season' });
     this.month.addEventListener('change', () => this.onChange({ month: Number(this.month.value) }));
 
     this.state = el('select', { 'aria-label': 'Go to' });
@@ -187,7 +190,7 @@ export class Controls {
     this.el.append(
       head,
       row('Location', this.city),
-      row('Month', this.month),
+      row('Season', this.month),
       row('Go to', this.state),
       row('Routine', routine),
       row('Facade', holdLabel),
@@ -203,7 +206,13 @@ export class Controls {
     this.city.value = sel.city;
     const c = this.cities.find((x) => x.id === sel.city)!;
     this.month.replaceChildren(
-      ...c.months.map((m) => el('option', { value: String(m.month) }, MONTH_NAMES[m.month - 1])),
+      ...c.months.map((m) =>
+        el(
+          'option',
+          { value: String(m.month), title: `${MONTH_NAMES[m.month - 1]} ${m.day}` },
+          monthLabel(m.month),
+        ),
+      ),
     );
     this.month.value = String(sel.month);
     const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
@@ -215,7 +224,7 @@ export class Controls {
     this.shades.disabled = !shadesHere;
     this.shadesLabel.title = shadesHere
       ? 'The conventional windows, each with a roller shade lowered for the activity and hour'
-      : 'No shade data for this month yet';
+      : 'No shade data for this season yet';
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
     this.legend.hidden = sel.layer === 'none';
   }
