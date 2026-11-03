@@ -31,8 +31,9 @@ def test_scores_are_the_deployed_loss(setup):
 def test_solve_beats_its_starts_and_no_single_move_improves_it(setup):
     _v3, _solver, so, cond, tgt = setup
     r = so.solve(cond, tgt)
+    assert r.method == "window"
     up, down = so.score(cond, tgt, [np.zeros(7, int), so.rows])
-    assert r.loss <= min(up, down) and r.loss <= r.gradient_loss
+    assert r.loss <= min(up, down) * (1 + BF16_TOL)
     moves = []
     for k, rows in enumerate(so.rows):
         for v in range(rows + 1):
@@ -41,6 +42,18 @@ def test_solve_beats_its_starts_and_no_single_move_improves_it(setup):
                 c[k] = v
                 moves.append(c)
     assert so.score(cond, tgt, moves).min() >= r.loss * (1 - BF16_TOL)
+
+
+def test_the_other_methods_run_and_score_exactly(setup):
+    _v3, _solver, so, cond, tgt = setup
+    g = so.solve(cond, tgt, method="gradient")
+    assert g.loss <= g.gradient_loss * (1 + BF16_TOL)  # the search only improves on it
+    for seed in (1, 2):
+        ga = so.solve(cond, tgt, method="ga", seed=seed)
+        assert ga.loss == pytest.approx(so.score(cond, tgt, [ga.drops])[0], rel=1e-9)
+        assert ga.scored <= 64 * 41
+    with pytest.raises(ValueError):
+        so.solve(cond, tgt, method="annealing")
 
 
 def test_exhaustive_agrees_with_scoring_on_a_small_facade(setup):

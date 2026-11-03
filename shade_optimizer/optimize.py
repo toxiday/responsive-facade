@@ -1,23 +1,31 @@
-"""v3's facade optimizer, on shades: the same surrogate, loss and optimiser, other variables.
+"""The shade optimizer: the best shade positions for one hour and state, on v3's surrogate and loss.
 
-v3's `optimize_coarse_to_fine` adjusts one logit per panel. Its openness, sigmoid(X / tau), goes
-through the surrogate (`_lux`, on v3's in-distribution `facade_in`) into the loss
-(`zone_penalty_sum` per occupied cell, plus `outside_glare_sum` per unoccupied cell at
-glare_weight 0.25); Adam steps the logits while tau anneals, so the soft facade sharpens to a
-binary one, and the binary designs are judged by the deployed loss (`seed_sweep.deployed_loss`).
+Every method scores whole-row designs with v3's own objective: the surrogate (`_lux`, on v3's
+in-distribution `facade_in`) into the loss (`zone_penalty_sum` per occupied cell, plus
+`outside_glare_sum` per unoccupied cell at glare_weight 0.25), as `seed_sweep.deployed_loss`
+scores a finished design. Three methods (`solve(..., method=)`):
 
-Here the variables are the shades instead, one per window: edge = rows * sigmoid(s), and each
-window row's openness is a sigmoid step at the edge, tau rows soft (shades.py). Everything else
-is v3's: the model call, both loss terms and their normalisation, Adam, tau annealed (here
-geometrically, TAU0 to TAU1 rows). v3's coarse-to-fine stages and smoothness term are left
-out: there are seven variables, and a shade's closed rows are one block anyway.
+  window    (the default) window by window: from each start (all up, half down, all down, and
+            the previous hour's shades when there is one), each round tries every position of
+            every shade, one batch of 56 designs, and takes the best single move, until none
+            helps; the best of the starts.
+  gradient  v3's optimizer with the shades' edges as its variables instead of panel logits:
+            edge = rows * sigmoid(s), each window row's openness a sigmoid step at the edge, tau
+            rows soft; Adam, tau annealed TAU0 to TAU1, the starts as one batch, the best binary
+            design kept every EVAL_EVERY steps, then the window-by-window search from it.
+  ga        a genetic algorithm: GA_POP random designs, tournament selection, uniform crossover,
+            about one shade mutated per child, the best GA_ELITE kept, GA_GENS generations.
 
-Several starts run as one batch: all up, half down, all down, and the previous hour's shades
-when there is one. Every EVAL_EVERY steps their binary designs are scored with the deployed
-loss and the best kept, as v3 keeps its best binary across stages. The best is then polished
-on whole rows: each round tries every position of every shade (one batch) and takes the best
-single move, until none helps. The polish works on the deployed loss, so it can only improve
-on what the gradient found.
+Why window by window (2026-11-02, Houston December, 27 hours of desk, couch_tv and
+lounge_read_w): it beat the gradient method in 11 hours and lost in 2 (mean loss 0.262 vs
+0.276) in 2.9 s against 4.7 s. The gradient's soft shades let half a sun beam through where
+the real design lets all or none, and its search ends at one design, where the window search
+starts from several.
+
+GPU memory: every surrogate call scores at most SCORE_CHUNK designs (a GA generation, a search
+round), and each process caps its share of the GPU at GPU_FRACTION, so the optimizer fails
+on its own rather than starving a bake that shares the GPU. (A test scoring 2048 designs a
+call once did: the bake's workers ran out of memory, 2026-11-02.)
 
 Per-design losses come from v3's loss functions in one call: they weight each condition's
 penalty by w before summing, so with the designs in the batch as the conditions, the gradient
@@ -38,28 +46,35 @@ from bake import config
 
 from . import shades
 
-# Tuned on Houston December, 27 hours of three states (2026-11-02): the final loss hardly
-# depends on these (0.276-0.287), as the polish does most of the work; 70 steps at 0.4 gave
-# the lowest, in two-thirds of the time of 120 steps.
+METHODS = ("window", "gradient", "ga")
+METHOD = "window"
+
+SCORE_CHUNK = 64         # designs per surrogate call
+GPU_FRACTION = 0.2       # of the GPU's memory, at most, per optimizer process
+BF16_TOL = 0.005         # batched losses are within this (relative) of the exact ones
+MAX_ROUNDS = 30          # window search rounds, at most
+
+# The gradient method. Tuned on the 27 hours above: the final loss hardly depends on these
+# (0.276-0.287), as the window search after it does most of the work.
 TAU0, TAU1 = 1.0, 0.1    # edge softness, in rows, annealed over the steps
 STEPS = 70
 LR = 0.4
 EVAL_EVERY = 10
-START_FRACTIONS = (0.0, 0.5, 1.0)
 EDGE_CLIP = 0.02         # starts at 0 or 1 sit just inside, where sigmoid(s) has a gradient
-MAX_POLISH_ROUNDS = 30
-SCORE_CHUNK = 512        # designs per surrogate call when scoring
-BF16_TOL = 0.005         # batched losses are within this (relative) of the exact ones
+
+# The genetic algorithm.
+GA_POP, GA_GENS, GA_ELITE, GA_TOURNAMENT, GA_CROSS = 64, 40, 2, 3, 0.9
 
 
 @dataclass
 class Result:
-    drops: list[int]       # rows each shade is lowered, window by window
-    loss: float            # deployed loss (exact)
-    gradient_loss: float   # deployed loss of the gradient's best binary design, before the polish
-    polish_rounds: int
-    scored: int            # binary designs scored
+    drops: list[int]               # rows each shade is lowered, window by window
+    loss: float                    # deployed loss (exact)
+    method: str
+    rounds: int                    # window search rounds, or GA generations
+    scored: int                    # binary designs scored
     seconds: float
+    gradient_loss: float | None = None  # gradient method: its best design before the search
 
 
 class ShadeOptimizer:
@@ -70,6 +85,10 @@ class ShadeOptimizer:
         self.v3 = v3
         self.opt = solver.opt
         self.dev = self.opt.device
+        dev = torch.device(self.dev)
+        if dev.type == "cuda":
+            index = dev.index if dev.index is not None else torch.cuda.current_device()
+            torch.cuda.set_per_process_memory_fraction(GPU_FRACTION, index)
         self.base = shades.load_baseline(v3) if base is None else base
         self.windows = shades.find_windows(self.base)
         self.panels = shades.Panels(self.base, self.windows)
@@ -138,30 +157,84 @@ class ShadeOptimizer:
         design at a time, as `deployed_loss` scores), or batched (faster, within BF16_TOL)."""
         return self._score_t(*self._tensors(cond, tgt), drops, exact)
 
-    # -- the optimizer --------------------------------------------------------------------
-
-    def solve(self, cond, tgt, prev=None) -> Result:
-        t = self.torch
-        t0 = time.perf_counter()
-        cond_t, tgt_t = self._tensors(cond, tgt)
-        n = len(self.windows)
-        fracs = [np.full(n, f) for f in START_FRACTIONS]
-        exact = [np.zeros(n, int), self.rows.copy()]          # all up (conventional), all down
-        if prev is not None:
-            fracs.append(np.asarray(prev) / self.rows)
-            exact.append(np.asarray(prev, dtype=int))
-        frac = np.clip(np.stack(fracs), EDGE_CLIP, 1 - EDGE_CLIP)
-        S = t.logit(t.as_tensor(frac, dtype=t.float32, device=self.dev)).requires_grad_(True)
-        adam = t.optim.Adam([S], lr=LR)
-
+    def _scorer(self, cond_t, tgt_t):
+        """A cache of batched scores by design, and a function that fills it."""
         seen: dict[tuple, float] = {}
 
-        def consider(designs):
-            new = [d for d in {tuple(int(v) for v in x) for x in designs} if d not in seen]
+        def consider(designs) -> np.ndarray:
+            keys = [tuple(int(v) for v in x) for x in designs]
+            new = list(dict.fromkeys(k for k in keys if k not in seen))
             if new:
                 for d, L in zip(new, self._score_t(cond_t, tgt_t, new)):
                     seen[d] = float(L)
+            return np.array([seen[k] for k in keys])
 
+        return seen, consider
+
+    # -- the methods ----------------------------------------------------------------------
+
+    def solve(self, cond, tgt, prev=None, method: str = METHOD, seed: int = 0) -> Result:
+        if method not in METHODS:
+            raise ValueError(f"unknown method {method!r}")
+        t0 = time.perf_counter()
+        cond_t, tgt_t = self._tensors(cond, tgt)
+        seen, consider = self._scorer(cond_t, tgt_t)
+        gradient_loss = None
+        if method == "window":
+            drops, rounds = self._window(cond_t, tgt_t, self._starts(prev), seen, consider)
+        elif method == "gradient":
+            best = self._gradient(cond_t, tgt_t, prev, seen, consider)
+            gradient_loss = float(self._score_t(cond_t, tgt_t, [best], exact=True)[0])
+            drops, rounds = self._window(cond_t, tgt_t, [best], seen, consider)
+        else:
+            drops, rounds = self._ga(seed, seen, consider)
+        loss = float(self._score_t(cond_t, tgt_t, [drops], exact=True)[0])
+        return Result(drops=list(drops), loss=loss, method=method, rounds=rounds,
+                      scored=len(seen), seconds=time.perf_counter() - t0,
+                      gradient_loss=gradient_loss)
+
+    def _starts(self, prev) -> list[list[int]]:
+        n = len(self.windows)
+        starts = [[0] * n, [int(r) // 2 for r in self.rows], [int(r) for r in self.rows]]
+        if prev is not None and list(prev) not in starts:
+            starts.append([int(v) for v in prev])
+        return starts
+
+    def _window(self, cond_t, tgt_t, starts, seen, consider):
+        """Window by window from each start; the best design found, and the rounds taken."""
+        best, best_L, total = None, float("inf"), 0
+        for start, L0 in zip(starts, consider(starts)):
+            drops, loss = list(start), float(L0)
+            for _ in range(MAX_ROUNDS):
+                total += 1
+                cands = []
+                for k, rows in enumerate(self.rows):
+                    for v in range(rows + 1):
+                        if v != drops[k]:
+                            c = list(drops)
+                            c[k] = v
+                            cands.append(c)
+                L = consider(cands)
+                i = int(np.argmin(L))
+                if L[i] >= loss:
+                    break
+                drops, loss = cands[i], float(L[i])
+            if loss < best_L:
+                best, best_L = drops, loss
+        return best, total
+
+    def _gradient(self, cond_t, tgt_t, prev, seen, consider) -> list[int]:
+        """v3's gradient scheme on the shades' edges; its best binary design."""
+        t = self.torch
+        n = len(self.windows)
+        fracs = [np.full(n, f) for f in (0.0, 0.5, 1.0)]
+        exact = [[0] * n, [int(r) for r in self.rows]]
+        if prev is not None:
+            fracs.append(np.asarray(prev) / self.rows)
+            exact.append([int(v) for v in prev])
+        frac = np.clip(np.stack(fracs), EDGE_CLIP, 1 - EDGE_CLIP)
+        S = t.logit(t.as_tensor(frac, dtype=t.float32, device=self.dev)).requires_grad_(True)
+        adam = t.optim.Adam([S], lr=LR)
         consider(exact)
         for step in range(STEPS):
             tau = TAU0 * (TAU1 / TAU0) ** (step / (STEPS - 1))
@@ -175,36 +248,30 @@ class ShadeOptimizer:
                 with t.no_grad():
                     e = (self._rows * t.sigmoid(S)).cpu().numpy()
                 consider(shades.covered(e, self.rows))
+        return list(min(seen, key=seen.get))
 
-        best = min(seen, key=seen.get)
-        drops, _L, rounds = self._polish(cond_t, tgt_t, list(best), seen[best], seen)
-        loss, gradient_loss = self._score_t(cond_t, tgt_t, [drops, list(best)], exact=True)
-        return Result(drops=drops, loss=float(loss), gradient_loss=float(gradient_loss),
-                      polish_rounds=rounds, scored=len(seen),
-                      seconds=time.perf_counter() - t0)
-
-    def _polish(self, cond_t, tgt_t, drops, loss, seen):
-        """Best single-shade moves over whole rows until none lowers the deployed loss."""
-        for rounds in range(1, MAX_POLISH_ROUNDS + 1):
-            cands = []
-            for k, rows in enumerate(self.rows):
-                for v in range(rows + 1):
-                    if v != drops[k]:
-                        c = list(drops)
-                        c[k] = v
-                        cands.append(c)
-            L = self._score_t(cond_t, tgt_t, cands)
-            for c, v in zip(cands, L):
-                seen.setdefault(tuple(c), float(v))
-            i = int(np.argmin(L))
-            if L[i] >= loss:
-                return drops, loss, rounds
-            drops, loss = cands[i], float(L[i])
-        return drops, loss, MAX_POLISH_ROUNDS
+    def _ga(self, seed, seen, consider):
+        """A genetic algorithm over whole-row designs; the best design and the generations."""
+        rng = np.random.default_rng(seed)
+        n, levels = len(self.windows), self.rows + 1
+        pop = rng.integers(0, levels, size=(GA_POP, n))
+        fit = consider(pop)
+        for _ in range(GA_GENS):
+            children = [pop[i].copy() for i in np.argsort(fit)[:GA_ELITE]]
+            while len(children) < GA_POP:
+                a, b = (pop[min(rng.choice(GA_POP, GA_TOURNAMENT, replace=False),
+                                key=lambda i: fit[i])] for _ in range(2))
+                child = np.where(rng.random(n) < 0.5, a, b) if rng.random() < GA_CROSS else a.copy()
+                mut = rng.random(n) < 1 / n
+                child[mut] = rng.integers(0, levels[mut])
+                children.append(child)
+            pop = np.array(children)
+            fit = consider(pop)
+        return list(min(seen, key=seen.get)), GA_GENS
 
     # -- every combination, to check the optimizer ----------------------------------------
 
-    def exhaustive(self, cond, tgt, batch: int = 2048, progress=None) -> dict:
+    def exhaustive(self, cond, tgt, batch: int = 256, progress=None) -> dict:
         """Score every combination of whole-row shade positions; the best and the time."""
         t = self.torch
         t0 = time.perf_counter()
@@ -224,7 +291,7 @@ class ShadeOptimizer:
             i = int(t.argmin(L))
             if float(L[i]) < best_L:
                 best_L, best_code = float(L[i]), s + i
-            if progress and (s // batch) % 200 == 0:
+            if progress and (s // batch) % 2000 == 0:
                 progress(s + len(codes), total, time.perf_counter() - t0)
         drops = [int(best_code // int(r) % int(v)) for r, v in zip(radix.cpu(), levels)]
         secs = round(time.perf_counter() - t0, 1)

@@ -5,6 +5,7 @@
   verify      Radiance runs of the shipped shade designs (shares the bake's result cache)
   pack        the site's shade data: web/public/data/{city}/{MM}.shades.bin and .json
   report      shade_optimizer/reports/report.md: conventional vs shades vs responsive
+  compare     the optimizer's methods (window, gradient, GA) on the same hours: methods.md
 
 --states is 'activity' (the activity states and ambient, the default), 'all', or a comma
 list of state ids.
@@ -22,7 +23,8 @@ from . import run
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="python -m shade_optimizer", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("cmd", choices=("solve", "exhaustive", "verify", "pack", "report"))
+    p.add_argument("cmd", choices=("solve", "exhaustive", "verify", "pack", "report",
+                                   "compare"))
     p.add_argument("--city", default="houston", help="comma list (solve, verify, report)")
     p.add_argument("--months", default="12", help="comma list; exhaustive takes the first")
     p.add_argument("--states", default="activity")
@@ -35,7 +37,7 @@ def main(argv=None) -> int:
     cities = a.city.split(",")
     months = [int(m) for m in a.months.split(",")]
     states = run.state_ids(a.states)
-    if a.cmd in ("solve", "exhaustive", "verify"):
+    if a.cmd in ("solve", "exhaustive", "verify", "compare"):
         config.keep_awake()
     if a.cmd == "solve":
         run.solve(cities, months, states, procs=a.procs, force=a.force)
@@ -57,6 +59,9 @@ def main(argv=None) -> int:
                       f"{r['bytes'] / 2 ** 20:.2f} MB, Radiance for {r['radiance']} of "
                       f"{r['records']} records")
         print(f"  index: {pack.write_index()}")
+    elif a.cmd == "compare":
+        sts = run.COMPARE_STATES if a.states == "activity" else tuple(states)
+        print(f"compare: {run.compare(cities[0], months[0], sts)}")
     else:
         print(f"report: {run.report(cities, months, states)}")
     return 0
