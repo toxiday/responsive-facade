@@ -1,10 +1,10 @@
-"""The shade optimizer scores what v3 optimises, and finds designs no single move improves (GPU)."""
+"""The shade optimizer scores what v3 optimises, and its GA is sound (GPU)."""
 
 import numpy as np
 import pytest
 
 from bake import bench, room, slots
-from shade_optimizer.optimize import BF16_TOL, ShadeOptimizer
+from shade_optimizer.optimize import BF16_TOL, GA_GENS, GA_POP, ShadeOptimizer
 
 pytestmark = pytest.mark.gpu
 
@@ -28,34 +28,20 @@ def test_scores_are_the_deployed_loss(setup):
     assert np.allclose(so.score(cond, tgt, drops, exact=False), deployed, rtol=BF16_TOL)
 
 
-def test_solve_beats_its_starts_and_no_single_move_improves_it(setup):
+def test_the_ga_never_does_worse_than_its_seeded_designs(setup):
     _v3, _solver, so, cond, tgt = setup
-    r = so.solve(cond, tgt)
-    assert r.method == "ga_window"
-    w = so.solve(cond, tgt, method="window")
-    assert r.loss <= w.loss * (1 + BF16_TOL)  # it includes the window search
-    up, down = so.score(cond, tgt, [np.zeros(7, int), so.rows])
-    assert r.loss <= min(up, down) * (1 + BF16_TOL)
-    moves = []
-    for k, rows in enumerate(so.rows):
-        for v in range(rows + 1):
-            if v != r.drops[k]:
-                c = list(r.drops)
-                c[k] = v
-                moves.append(c)
-    assert so.score(cond, tgt, moves).min() >= r.loss * (1 - BF16_TOL)
+    prev = [3, 0, 8, 1, 5, 0, 2]
+    r = so.solve(cond, tgt, prev=prev, seed=7)
+    up, down, before = so.score(cond, tgt, [np.zeros(7, int), so.rows, prev])
+    assert r.loss <= min(up, down, before) * (1 + BF16_TOL)
+    assert r.loss == pytest.approx(so.score(cond, tgt, [r.drops])[0], rel=1e-9)
+    assert r.scored <= GA_POP * (GA_GENS + 1)
 
 
-def test_the_other_methods_run_and_score_exactly(setup):
+def test_the_ga_repeats_with_its_seed(setup):
     _v3, _solver, so, cond, tgt = setup
-    g = so.solve(cond, tgt, method="gradient")
-    assert g.loss <= g.gradient_loss * (1 + BF16_TOL)  # the search only improves on it
-    for seed in (1, 2):
-        ga = so.solve(cond, tgt, method="ga", seed=seed)
-        assert ga.loss == pytest.approx(so.score(cond, tgt, [ga.drops])[0], rel=1e-9)
-        assert ga.scored <= 64 * 41
-    with pytest.raises(ValueError):
-        so.solve(cond, tgt, method="annealing")
+    a, b = so.solve(cond, tgt, seed=11), so.solve(cond, tgt, seed=11)
+    assert a.drops == b.drops and a.loss == b.loss
 
 
 def test_exhaustive_agrees_with_scoring_on_a_small_facade(setup):

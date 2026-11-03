@@ -1,17 +1,17 @@
 """Shade chains through a baked day, the exhaustive check, Radiance and the report.
 
 A chain is one (city, month, state) through the day's baked hours, like the bake's. At each
-hour the optimizer starts from all up, half, all down and the previous hour's shades. The
-previous hour's shades stay put if their deployed loss is within KEEP_TOL of the best (the
-bake's warm-vs-cold rule), so shades don't move for nothing. Each chain is written atomically
+hour the GA (optimize.py) runs with the previous hour's shades among its first generation, and
+a seed from the city, month, state and hour, so a bake repeats exactly. The previous hour's
+shades stay put if their deployed loss is within KEEP_TOL of the best (the bake's
+warm-vs-cold rule), so shades don't move for nothing. Each chain is written atomically
 to shade_optimizer/work/solve/{city}/{MM}/{state}.json, with the conventional facade's loss
 at each hour beside the shades' (all shades up is the conventional facade).
 
 Radiance runs go through the bake's runner and share its result cache (bake/verify.py: keyed
 by design and sun, so an all-up design reuses the conventional facade's run). The report puts
 the conventional facade, the shades and the responsive facade side by side for each state,
-with the bake's own metrics (bake/report.py: v3's zone_stats). `compare` runs the optimizer's
-methods (optimize.py) on the same hours and writes reports/methods.md.
+with the bake's own metrics (bake/report.py: v3's zone_stats).
 """
 
 from __future__ import annotations
@@ -60,7 +60,9 @@ def state_ids(spec: str) -> list[str]:
 
 
 def _settings() -> dict:
-    return {"method": optimize.METHOD, "keep_tol": KEEP_TOL,
+    return {"method": "ga", "ga": [optimize.GA_POP, optimize.GA_GENS, optimize.GA_ELITE,
+                                   optimize.GA_TOURNAMENT, optimize.GA_CROSS],
+            "keep_tol": KEEP_TOL,
             "glare_weight": config.GLARE_WEIGHT, "glare_cap": config.GLARE_CAP}
 
 
@@ -114,7 +116,7 @@ def solve_chain(task) -> dict:
             "slot": slot["label"], "drops": ship, "loss": loss, "ship": how,
             "loss_solved": r.loss,
             "loss_conventional": float(so.score(cond, tgt, [up])[0]),
-            "rounds": r.rounds, "scored": r.scored,
+            "scored": r.scored,
             "seconds": round(r.seconds, 3),
             "moved": None if prev is None else int(np.sum(np.array(ship) != prev)),
             "facade": bake_solve._bits_hex(binary),
@@ -329,7 +331,7 @@ def report(cities, months, states) -> Path:
         secs = [r["seconds"] for r in all_recs]
         moved = [r["moved"] for r in all_recs if r["moved"] is not None]
         lines += ["", "## The optimizer", "",
-                  f"- Method: {optimize.METHOD} (optimize.py). {len(all_recs)} solves, "
+                  f"- Genetic algorithm (optimize.py). {len(all_recs)} solves, "
                   f"{statistics.mean(secs):.2f} s each on average (max {max(secs):.2f} s), "
                   f"{_mean(r['scored'] for r in all_recs):.0f} designs scored per solve.",
                   f"- Shades kept from the hour before: "
@@ -353,60 +355,3 @@ def report(cities, months, states) -> Path:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
-
-# ---------------------------------------------------------------------------
-# The methods, side by side
-# ---------------------------------------------------------------------------
-
-COMPARE_STATES = ("desk", "couch_tv", "lounge_read_w")
-GA_SEEDS = (1, 2, 3)
-
-
-def compare(city: str, month: int, states=COMPARE_STATES) -> Path:
-    """Every method (optimize.METHODS; the GA with GA_SEEDS) on every hour of the day for
-    `states`, from scratch (no previous hour), and reports/methods.md."""
-    v3, solver = bench.make_solver()
-    so = ShadeOptimizer(v3, solver)
-    sts = {s.id: s for s in room.states()}
-    day = slots.load(city)["months"][month - 1]["slots"]
-    runs = [(m, 0) for m in optimize.METHODS if m != "ga"] + [("ga", s) for s in GA_SEEDS]
-    so.solve(bench.condition(v3, day[0]), room.target_and_owner(sts[states[0]])[0])  # warm-up
-    rows = []
-    for sid in states:
-        tgt = room.target_and_owner(sts[sid])[0]
-        for slot in day:
-            cond = bench.condition(v3, slot)
-            res = {f"{m}{s or ''}": so.solve(cond, tgt, method=m, seed=s) for m, s in runs}
-            rows.append({"state": sid, "slot": slot["label"],
-                         **{k: {"loss": r.loss, "seconds": round(r.seconds, 3),
-                                "scored": r.scored, "drops": r.drops} for k, r in res.items()}})
-            print(f"  {sid} {slot['label']}: " + "  ".join(
-                f"{k} {r.loss:.4f} ({r.seconds:.1f}s)" for k, r in res.items()), flush=True)
-
-    names = [f"{m}{s or ''}" for m, s in runs]
-    best = [min(r[k]["loss"] for k in names) for r in rows]
-
-    def found(k):  # within bfloat16 precision of the best any method found
-        return sum(r[k]["loss"] <= b * (1 + BF16_TOL) + 1e-9 for r, b in zip(rows, best))
-
-    label = {"window": "Window by window", "gradient": "Gradient, then window by window"}
-    lines = ["# Shade optimizer: methods", "",
-             f"{city} {month:02d}, {', '.join(states)}: every hour, {len(rows)} cases, each solved "
-             "from scratch. Deployed loss (v3's objective, lower is better), scored exactly. "
-             f"The GA: population {optimize.GA_POP}, {optimize.GA_GENS} generations, seeds "
-             f"{', '.join(map(str, GA_SEEDS))}. \"Best found\" counts the cases where a method is "
-             "within bfloat16 precision of the best any method found.", "",
-             "| Method | Mean loss | Best found | Mean time | Designs scored |",
-             "|---|---|---|---|---|"]
-    for k in names:
-        lines.append(f"| {label.get(k, 'GA, seed ' + k[2:] if k.startswith('ga') else k)} | "
-                     f"{statistics.mean(r[k]['loss'] for r in rows):.4f} | "
-                     f"{found(k)} of {len(rows)} | "
-                     f"{statistics.mean(r[k]['seconds'] for r in rows):.2f} s | "
-                     f"{statistics.mean(r[k]['scored'] for r in rows):.0f} |")
-    path = REPORTS / "methods.md"
-    config.assert_writable(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (REPORTS / "methods.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
-    return path
