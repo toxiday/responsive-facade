@@ -93,7 +93,8 @@ export class Readout {
         `<div>${inBand}% of the zone in band · ` +
           `${m.glare_rad ?? m.glare_sur} floor cells over 3000 lux</div>`,
         `<div>${facade} Sun ${s.alt.toFixed(0)}° up, ${s.sky} sky.</div>`,
-        `<div class="small">Room lit from the Radiance result (direct sun drawn separately)` +
+        `<div class="small">Room lit from the ` +
+          `${view.fill === 'radiance' ? 'Radiance result' : 'surrogate'} (direct sun drawn separately)` +
           `${view.tvOn ? '; the TV glow is for show and not in the numbers' : ''}.</div>`,
       );
     }
