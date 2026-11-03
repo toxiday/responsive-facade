@@ -77,11 +77,14 @@ export class Readout {
         );
       }
       const sh = view.shades;
-      const facade = sh
-        ? `Shades ${view.ship === 'kept' ? 'kept from the previous hour' : 'set for this hour'}` +
-          (view.flips === null ? '.' : `, ${view.flips} of ${sh.drops.length} moved.`)
-        : `Facade ${view.ship === 'warm' ? 'adjusted from the previous hour' : 'solved afresh'}` +
-          (view.flips === null ? '.' : `, ${view.flips} panels changed.`);
+      const facade =
+        view.ship === 'fixed'
+          ? 'One fixed facade, designed for the daily routine in all four seasons.'
+          : sh
+            ? `Shades ${view.ship === 'kept' ? 'kept from the previous hour' : 'set for this hour'}` +
+              (view.flips === null ? '.' : `, ${view.flips} of ${sh.drops.length} moved.`)
+            : `Facade ${view.ship === 'warm' ? 'adjusted from the previous hour' : 'solved afresh'}` +
+              (view.flips === null ? '.' : `, ${view.flips} panels changed.`);
       if (sh) {
         // Per wall, how far down each shade is, window by window.
         const walls = [...new Set(sh.walls)].map(

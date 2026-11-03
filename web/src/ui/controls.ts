@@ -1,9 +1,12 @@
-// The control panel: the location (city) and the season (a baked month), where the occupant goes (each activity;
-// the list reads "Standing" while they are on open floor), what they do on their own (the daily
-// schedule, a random tour, or nothing; app/schedule.ts), whether the facade freezes until they
-// arrive,
-// the conventional windows with operable shades instead of the responsive facade, and the heatmap layer with its legend. Only
-// city-months that have data are offered. The time is on the bar along the bottom (timebar.ts).
+// The control panel: the title and a work-in-progress note, then the location (city) and the
+// season (a baked month), where the occupant goes (each activity; the list reads "Standing"
+// while they are on open floor), what they do on their own (the daily schedule, a random tour,
+// or nothing; app/schedule.ts), whether the facade freezes until they arrive, and the heatmap
+// layer with its legend. Only city-months that have
+// data are offered. The facade mode is in the bar along the top (modebar.ts), the time on the
+// bar along the bottom (timebar.ts). With the schedule-specific facade, the occupant keeps to
+// the daily routine it was designed for: the other routines and the Go to list are greyed, and
+// using them says so (onLocked).
 
 import type { Legend } from '../data/manifest';
 import type { Layer } from '../app/record';
@@ -33,9 +36,14 @@ export interface Choice {
   label: string;
 }
 
+/** How the facade is run (modebar.ts): the responsive facade, the conventional windows with
+ * operable shades (shade_optimizer/), or the schedule-specific facade, one fixed design for the
+ * daily routine (bake/schedule_facade.py). */
+export type FacadeMode = 'responsive' | 'shades' | 'schedule';
+
 export interface CityChoice extends Choice {
-  /** Baked months with their day of the month, and whether they have shade files. */
-  months: { month: number; day: number; shades: boolean }[];
+  /** Baked months with their day of the month, and whether they have shade and schedule files. */
+  months: { month: number; day: number; shades: boolean; schedule: boolean }[];
 }
 
 export interface Selection {
@@ -44,9 +52,9 @@ export interface Selection {
   slot: number;
   state: string;
   layer: Layer;
-  /** Show the conventional facade's windows with operable shades (shade_optimizer/) instead
-   * of the responsive facade (Tony, 2026-11-02; it replaces the fixed conventional facade). */
-  shades: boolean;
+  /** The facade mode (Tony, 2026-11-03; the operable shades first replaced the conventional
+   * facade's comparison on 2026-11-02). */
+  mode: FacadeMode;
   /** "Freeze until arrival": the facade keeps its state while the occupant walks and changes once
    * they arrive (on by default). */
   hold: boolean;
@@ -111,12 +119,13 @@ function legendBar(legend: Legend): HTMLElement {
 export class Controls {
   readonly el: HTMLElement;
   onChange: (patch: Partial<Selection>) => void = () => {};
+  /** A greyed control was used (the schedule-specific facade keeps the daily routine). */
+  onLocked: () => void = () => {};
   private readonly city: HTMLSelectElement;
   private readonly month: HTMLSelectElement;
   private readonly state: HTMLSelectElement;
-  private readonly shades: HTMLInputElement;
-  private readonly shadesLabel: HTMLLabelElement;
   private readonly hold: HTMLInputElement;
+  private locked = false;
   private readonly routines = new Map<Routine, HTMLButtonElement>();
   private readonly layers = new Map<Layer, HTMLButtonElement>();
   private readonly legend: HTMLElement;
@@ -128,11 +137,26 @@ export class Controls {
     legend: Legend,
   ) {
     this.el = el('section', { class: 'panel', 'aria-label': 'Controls' });
+    // On a phone the panel is a dropdown (Tony, 2026-11-03): only the title until the header
+    // is tapped, so the room stays in view (style.css). Elsewhere it is always open.
     const head = el('header');
+    const toggle = el('button', {
+      type: 'button',
+      class: 'panel-toggle',
+      'aria-expanded': 'false',
+      'aria-controls': 'panel-body',
+      'aria-label': 'Show the controls',
+    });
     head.append(
       el('h1', {}, 'Responsive Facade'),
-      el('p', { class: 'dim' }, 'Unit 501.6. A facade that reshapes itself for each activity.'),
+      el('div', { class: 'wip' }, 'Work-in-progress demo'),
+      toggle,
     );
+    head.addEventListener('click', () => {
+      const open = this.el.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-label', open ? 'Hide the controls' : 'Show the controls');
+    });
 
     this.city = el('select', { 'aria-label': 'City' });
     for (const c of cities) this.city.append(el('option', { value: c.id }, c.label));
@@ -154,11 +178,25 @@ export class Controls {
     this.state.append(standing);
     for (const a of activities) this.state.append(el('option', { value: a.id }, a.label));
     this.state.addEventListener('change', () => this.onChange({ state: this.state.value }));
+    // Greyed, the list doesn't open (a disabled select would swallow the click that says why).
+    const blocked = (e: Event) => {
+      if (!this.locked) return;
+      e.preventDefault();
+      this.onLocked();
+    };
+    this.state.addEventListener('mousedown', blocked);
+    this.state.addEventListener('keydown', (e) => {
+      if (!['Tab', 'Shift', 'Escape'].includes(e.key)) blocked(e);
+    });
 
     const routine = el('div', { class: 'seg', role: 'group', 'aria-label': 'Routine' });
     for (const [id, label, title] of ROUTINES) {
       const b = el('button', { type: 'button', title }, label);
-      b.addEventListener('click', () => this.onChange({ routine: id }));
+      b.addEventListener('click', () =>
+        b.getAttribute('aria-disabled') === 'true'
+          ? this.onLocked()
+          : this.onChange({ routine: id }),
+      );
       this.routines.set(id, b);
       routine.append(b);
     }
@@ -167,11 +205,6 @@ export class Controls {
     this.hold.addEventListener('change', () => this.onChange({ hold: this.hold.checked }));
     const holdLabel = el('label', { class: 'check' });
     holdLabel.append(this.hold, el('span', {}, 'Freeze until arrival'));
-
-    this.shades = el('input', { type: 'checkbox' });
-    this.shades.addEventListener('change', () => this.onChange({ shades: this.shades.checked }));
-    this.shadesLabel = el('label', { class: 'check' });
-    this.shadesLabel.append(this.shades, el('span', {}, 'Operable shades'));
 
     const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Heatmap' });
     for (const [id, label] of LAYERS) {
@@ -187,17 +220,17 @@ export class Controls {
       r.append(el('span', { class: 'row-label' }, label), ...kids);
       return r;
     };
-    this.el.append(
-      head,
+    const body = el('div', { class: 'panel-body', id: 'panel-body' });
+    body.append(
       row('Location', this.city),
       row('Season', this.month),
       row('Go to', this.state),
       row('Routine', routine),
       row('Facade', holdLabel),
-      row('Compare', this.shadesLabel),
       row('Heatmap', seg),
       this.legend,
     );
+    this.el.append(head, body);
     parent.append(this.el);
   }
 
@@ -217,14 +250,14 @@ export class Controls {
     this.month.value = String(sel.month);
     const listed = [...this.state.options].some((o) => o.value === sel.state && o.value);
     this.state.value = listed ? sel.state : '';
-    for (const [id, b] of this.routines) b.setAttribute('aria-pressed', String(id === sel.routine));
+    // The schedule-specific facade was designed for the daily routine: only that one runs.
+    this.locked = sel.mode === 'schedule';
+    this.state.setAttribute('aria-disabled', String(this.locked));
+    for (const [id, b] of this.routines) {
+      b.setAttribute('aria-pressed', String(id === sel.routine));
+      b.setAttribute('aria-disabled', String(this.locked && id !== 'daily'));
+    }
     this.hold.checked = sel.hold;
-    const shadesHere = c.months.find((m) => m.month === sel.month)?.shades ?? false;
-    this.shades.checked = sel.shades;
-    this.shades.disabled = !shadesHere;
-    this.shadesLabel.title = shadesHere
-      ? 'The conventional windows, each with a roller shade lowered for the activity and hour'
-      : 'No shade data for this season yet';
     for (const [id, b] of this.layers) b.setAttribute('aria-pressed', String(id === sel.layer));
     this.legend.hidden = sel.layer === 'none';
   }

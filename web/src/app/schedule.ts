@@ -15,6 +15,7 @@
 // long walk after them last a little longer.
 
 import { HOUR_S } from './clock';
+import dayPlan from './day_plan.json';
 
 export type Routine = 'daily' | 'random' | 'off';
 export const ROUTINES: readonly Routine[] = ['daily', 'random', 'off'];
@@ -27,18 +28,14 @@ export const MIN_STAY_S = HOUR_S / 2;
 /** The random routine moves on every this many hours. */
 export const RANDOM_HOURS = 2;
 
-/** Hour (slot label) and state; each entry holds until the next. */
-export const DAY_PLAN: readonly (readonly [string, string])[] = [
-  ['08:30', 'dining'], // breakfast at the dining table
-  ['09:30', 'lounge_read_w'], // a book in one of the lounge chairs
-  ['10:30', 'desk'],
-  ['11:30', 'desk'],
-  ['12:30', 'counter'], // lunch at the bar counter
-  ['13:30', 'lounger_relax'], // relaxing on the chaise
-  ['14:30', 'desk'],
-  ['15:30', 'cooking_w'], // cooking at the counter (the W one, in view from the default camera)
-  ['16:30', 'couch_tv'], // TV on the sofa
-];
+/**
+ * Hour (slot label) and state; each entry holds until the next. Breakfast at the dining table, a
+ * book in one of the lounge chairs, the desk, lunch at the bar counter, relaxing on the chaise,
+ * the desk, cooking at the counter (the W one, in view from the default camera), TV on the
+ * sofa. In day_plan.json, which the bake reads too: the schedule-specific facade is designed
+ * for this plan (bake/schedule_facade.py).
+ */
+export const DAY_PLAN: readonly (readonly [string, string])[] = dayPlan.map(([at, s]) => [at!, s!]);
 
 /** The state the daily schedule has for an hour (a slot label such as "09:30"). */
 export function plannedState(label: string): string {

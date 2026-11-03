@@ -9,6 +9,8 @@ export interface DataIndex {
   months: Record<string, number[]>;
   /** City id → months with shade files (shade_optimizer/pack.py). */
   shades?: Record<string, number[]>;
+  /** City id → months with the schedule-specific facade's files (bake/schedule_facade.py). */
+  schedule?: Record<string, number[]>;
 }
 
 export async function loadIndex(): Promise<DataIndex> {

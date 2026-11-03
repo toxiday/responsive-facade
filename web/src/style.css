@@ -104,8 +104,18 @@ body.night .compass {
   font-size: 16px;
 }
 
-.panel header p {
-  margin: 2px 0 10px;
+.wip {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.panel-body {
+  margin-top: 10px;
+}
+
+/* The phone's dropdown handle (ui/controls.ts); elsewhere the panel is always open. */
+.panel-toggle {
+  display: none;
 }
 
 .panel .row {
@@ -162,6 +172,51 @@ body.night .compass {
 .seg button[aria-pressed='true'] {
   background: var(--ink);
   color: #fff;
+}
+
+/* Greyed (with the schedule-specific facade, or a mode without data): still clickable, so a
+   click can say why (ui/toast.ts). */
+.seg button[aria-disabled='true'],
+.panel select[aria-disabled='true'] {
+  background: #f1eeea;
+  color: #b3ada6;
+  cursor: not-allowed;
+}
+
+/* The facade mode (ui/modebar.ts): top centre, clear of the panel on the right. */
+.modebar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+}
+
+.modebar button {
+  padding: 7px 14px;
+  white-space: nowrap;
+}
+
+/* A short message above the time bar (ui/toast.ts). */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--timebar-h) + 24px);
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12.5px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  z-index: 10;
+}
+
+.toast.show {
+  opacity: 1;
 }
 
 .legend {
@@ -464,7 +519,71 @@ body.night .compass {
   }
 }
 
+/* Narrower, the mode bar moves to the left, clear of the panel. */
+@media (max-width: 1100px) {
+  .modebar {
+    left: 12px;
+    transform: none;
+  }
+}
+
 @media (max-width: 720px) {
+  .modebar {
+    right: 12px;
+  }
+
+  .modebar button {
+    padding: 5px 4px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .panel {
+    top: 64px;
+  }
+
+  /* A dropdown: the title until the header is tapped, so the room stays in view. */
+  .panel header {
+    position: relative;
+    padding-right: 32px;
+    cursor: pointer;
+  }
+
+  .panel:not(.open) .panel-body {
+    display: none;
+  }
+
+  .panel-toggle {
+    display: block;
+    position: absolute;
+    top: 50%;
+    right: -6px;
+    width: 32px;
+    height: 32px;
+    margin-top: -16px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .panel-toggle::before {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin: 8px auto 0;
+    border-right: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+    transform: rotate(45deg);
+    transition: transform 0.2s;
+  }
+
+  .panel.open .panel-toggle::before {
+    margin-top: 13px;
+    transform: rotate(-135deg);
+  }
+
   .timebar {
     grid-template-columns: auto 1fr auto;
     gap: 0 10px;

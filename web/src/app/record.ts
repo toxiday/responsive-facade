@@ -1,9 +1,12 @@
 // Puts one baked record on the stage: the facade (panels turning, or at once), the sun, the
 // daylight fill, the heatmap layer, the TV and the occupant's zone. Shared by the app and the
 // ?debug=bake review view. A shade file's record (data/month.ts) puts the facade in shade
-// mode, the conventional windows with their shades; a change between modes shows at once.
+// mode, the conventional windows with their shades; a change between modes shows at once. A
+// schedule file has one record an hour, the same fixed design whatever the occupant does: the
+// zone, the TV and the numbers are the occupant's state's, computed here from the hour's lux
+// (as the consistency test checks the bake's).
 
-import type { Manifest, OccupantState } from '../data/manifest';
+import { ownerGrid, type Manifest, type OccupantState } from '../data/manifest';
 import { cellIndex, cellOf } from '../data/grid';
 import { bitsFromHex, type MonthData, type RecordMetrics, type SlotMeta } from '../data/month';
 import { SIDES } from '../facade/geometry';
@@ -40,6 +43,45 @@ export interface RecordView {
   luxSurrogate: Float32Array;
 }
 
+/** The one state of a schedule file (bake/schedule_facade.py). */
+export const FIXED = 'schedule';
+
+/** The share of each zone in v3's band and above it (%, to 0.1), and the glare cells, as the
+ * bake's metrics (bake/report.py) count them. */
+export function zoneMetrics(
+  state: OccupantState,
+  rad: Float32Array | null,
+  sur: Float32Array,
+): RecordMetrics {
+  const owner = ownerGrid(state.owner);
+  const count = (lux: Float32Array) => {
+    const inBand: number[] = [];
+    const above: number[] = [];
+    state.zones.forEach((z, zi) => {
+      const [lo, hi] = [z.target * BAND[0], z.target * BAND[1]];
+      let n = 0;
+      let a = 0;
+      let b = 0;
+      for (let i = 0; i < owner.length; i++) {
+        if (owner[i] !== zi) continue;
+        n++;
+        if (lux[i]! >= lo && lux[i]! <= hi) a++;
+        else if (lux[i]! > hi) b++;
+      }
+      inBand.push(Math.round((1000 * a) / Math.max(1, n)) / 10);
+      above.push(Math.round((1000 * b) / Math.max(1, n)) / 10);
+    });
+    return { inBand, above, glare: lux.reduce((c, v) => c + (v > GLARE_LUX ? 1 : 0), 0) };
+  };
+  const s = count(sur);
+  const out: RecordMetrics = { in_band_sur: s.inBand, above_sur: s.above, glare_sur: s.glare };
+  if (rad) {
+    const r = count(rad);
+    Object.assign(out, { in_band_rad: r.inBand, above_rad: r.above, glare_rad: r.glare });
+  }
+  return out;
+}
+
 export function stateFor(manifest: Manifest, stateId: string): OccupantState | undefined {
   return manifest.states.find((x) => x.id === (stateId === 'baseline' ? 'ambient' : stateId));
 }
@@ -53,7 +95,8 @@ export function showRecord(
   layer: Layer,
   animate: boolean,
 ): RecordView {
-  const k = data.meta.states.indexOf(stateId);
+  const fixed = data.meta.states.length === 1 && data.meta.states[0] === FIXED;
+  const k = fixed ? 0 : data.meta.states.indexOf(stateId);
   if (k < 0) throw new Error(`no baked state ${stateId}`);
   const slot = data.meta.slots[s]!;
   const { room } = manifest;
@@ -85,7 +128,7 @@ export function showRecord(
   void stage.tv?.setOn(tvOn).then(() => stage.invalidate());
   stage.invalidate();
 
-  const rec = data.meta.records[stateId]!;
+  const rec = data.meta.records[fixed ? FIXED : stateId]!;
   const windows = data.meta.windows;
   const drops = rec.drops?.[s];
   return {
@@ -104,7 +147,7 @@ export function showRecord(
             walls: windows.map((w) => SIDES[w.wall]!),
           }
         : null,
-    metrics: rec.metrics[s]!,
+    metrics: fixed && state ? zoneMetrics(state, rad, sur) : rec.metrics[s]!,
     luxRadiance: rad,
     luxSurrogate: sur,
   };

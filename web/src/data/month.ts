@@ -68,9 +68,14 @@ export interface MonthSidecar {
   /** Shade files: the windows, and the conventional facade they are in (packed bits, hex). */
   windows?: ShadeWindow[];
   frame?: string;
+  /** Schedule files (one state, "schedule"): the daily routine's state at each hour, which the
+   * record's metrics are for. */
+  plan?: string[];
 }
 
-export type Variant = 'panels' | 'shades';
+/** The month files (the responsive facade), the shade files and the schedule-specific facade's
+ * files ({MM}.bin, {MM}.shades.bin, {MM}.schedule.bin). */
+export type Variant = 'panels' | 'shades' | 'schedule';
 
 /** Packed facade bits (hex, LSB first, as the bake writes them) as 2048 flags. */
 export function bitsFromHex(hex: string): Uint8Array {
@@ -144,7 +149,7 @@ export async function loadMonth(
 ): Promise<MonthData> {
   const base =
     `${import.meta.env.BASE_URL}data/${city}/${String(month).padStart(2, '0')}` +
-    (variant === 'shades' ? '.shades' : '');
+    (variant === 'panels' ? '' : `.${variant}`);
   const [bin, meta] = await Promise.all([
     fetch(`${base}.bin`).then((r) => {
       if (!r.ok) throw new Error(`${base}.bin: ${r.status}`);
